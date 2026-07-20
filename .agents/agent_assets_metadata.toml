@@ -5,10 +5,10 @@ generated = []
 id = "IPRP2FpHq8NlPGBCsPXSz"
 uri = "file://artifacts/readwell/assets/images/icon.png"
 type = "image"
-title = "New ReadWell app icon"
+title = "Einstein B&W app icon"
 
 [[outputs]]
 id = "2Go8ofvzyVA6d6WEF6kCj"
 uri = "file://artifacts/readwell/assets/images/splash-icon.png"
 type = "image"
-title = "New ReadWell splash logo"
+title = "Einstein B&W splash logo"
