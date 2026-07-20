@@ -223,6 +223,11 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
     res.json({ bookId, suggestedTitle, pageCount, pages, ocrUsed: anyOcrUsed, expiresAt });
   } catch (err) {
     logger.error({ err, filename: originalname }, "PDF render failed");
+    // Best-effort cleanup: delete any page images that were already uploaded
+    // before the error occurred so they do not linger in storage indefinitely.
+    objectStorage.deletePdfPages(bookId).catch((cleanupErr) => {
+      logger.warn({ err: cleanupErr, bookId }, "Partial-import cleanup failed");
+    });
     res.status(500).json({ error: "Failed to render PDF pages." });
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
