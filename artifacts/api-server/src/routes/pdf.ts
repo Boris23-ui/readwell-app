@@ -14,27 +14,58 @@ const router = Router();
 const objectStorage = new ObjectStorageService();
 
 /**
+ * Corrects common character-level OCR substitution errors.
+ *
+ * Only applies corrections where the surrounding context makes the intended
+ * character unambiguous (e.g. "|" flanked by lowercase letters is almost
+ * certainly a misread "l", not a pipe character). Standalone digits and
+ * uppercase-surrounded characters are left untouched to avoid corrupting
+ * legitimate numeric content.
+ */
+export function correctOcrSubstitutions(text: string): string {
+  return text
+    // "|" → "l" between lowercase letters (pipe misread as lowercase L)
+    // e.g. "samp|e" → "sample", "on|y" → "only"
+    .replace(/(?<=[a-z])\|(?=[a-z])/g, 'l')
+    // "|" → "I" when used as a standalone word token (pipe misread as capital I)
+    // Matches "|" surrounded by whitespace or at string/line boundaries,
+    // e.g. "| went to" → "I went to", "She and | both" → "She and I both"
+    .replace(/(?<!\S)\|(?!\S)/g, 'I')
+    // "0" → "o" between lowercase letters (zero misread as letter o)
+    // e.g. "c0mputer" → "computer", "w0rd" → "word"
+    .replace(/(?<=[a-z])0(?=[a-z])/g, 'o')
+    // "1" → "l" at the very start of a word followed by 2+ lowercase letters
+    // (digit-one misread as lowercase L at word-start; avoids corrupting
+    // meaningful numbers like "100" or mid-word digits like "qu1ck")
+    // e.g. "1azy" → "lazy", "1ong" → "long"
+    .replace(/\b1(?=[a-z]{2,})/g, 'l');
+}
+
+/**
  * Light post-processing for OCR-sourced text.
- * Removes common noise without touching normal extracted text.
+ * Corrects common character-level substitutions, then removes structural noise
+ * without touching normal extracted text.
  */
 export function sanitizeOcrText(raw: string): string {
-  return raw
-    .split('\n')
-    // Remove lines that are a single character (noise glyphs)
-    .filter(line => line.trim().length !== 1)
-    // Remove lines that are entirely non-alphanumeric (e.g. "--- ---" or "| |")
-    .filter(line => line.trim() === '' || /[a-z0-9]/i.test(line))
-    // Collapse runs of 3+ repeated identical characters that are not word chars
-    // (e.g. "~~~~", "====", "....") — keep ellipsis ("...") intact
-    .map(line => line.replace(/([^\w\s])\1{3,}/g, ''))
-    .join('\n')
-    // Collapse 3+ consecutive blank lines into two (paragraph break)
-    .replace(/\n{3,}/g, '\n\n')
-    // Fix broken hyphenation: word-\nnextword → wordnextword
-    .replace(/(\w)-\n(\w)/g, '$1$2')
-    // Collapse excessive internal whitespace (but not newlines)
-    .replace(/[^\S\n]{2,}/g, ' ')
-    .trim();
+  return correctOcrSubstitutions(
+    raw
+      .split('\n')
+      // Remove lines that are a single character (noise glyphs)
+      .filter(line => line.trim().length !== 1)
+      // Remove lines that are entirely non-alphanumeric (e.g. "--- ---" or "| |")
+      .filter(line => line.trim() === '' || /[a-z0-9]/i.test(line))
+      // Collapse runs of 3+ repeated identical characters that are not word chars
+      // (e.g. "~~~~", "====", "....") — keep ellipsis ("...") intact
+      .map(line => line.replace(/([^\w\s])\1{3,}/g, ''))
+      .join('\n')
+      // Collapse 3+ consecutive blank lines into two (paragraph break)
+      .replace(/\n{3,}/g, '\n\n')
+      // Fix broken hyphenation: word-\nnextword → wordnextword
+      .replace(/(\w)-\n(\w)/g, '$1$2')
+      // Collapse excessive internal whitespace (but not newlines)
+      .replace(/[^\S\n]{2,}/g, ' ')
+      .trim()
+  );
 }
 
 const MAX_PAGES = 150;

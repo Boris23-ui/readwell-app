@@ -10,7 +10,7 @@
  *  - real-world OCR noise fixture: word count and structure within expected bounds
  */
 import { describe, it, expect } from "vitest";
-import { sanitizeOcrText } from "./pdf";
+import { sanitizeOcrText, correctOcrSubstitutions } from "./pdf";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,6 +202,139 @@ describe("sanitizeOcrText — excessive whitespace", () => {
     const result = sanitizeOcrText(input);
     const lines = result.split("\n");
     expect(lines.length).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// correctOcrSubstitutions tests
+// ---------------------------------------------------------------------------
+
+describe("correctOcrSubstitutions — pipe misread as lowercase L", () => {
+  it("replaces | with l when flanked by lowercase letters", () => {
+    expect(correctOcrSubstitutions("samp|e")).toBe("sample");
+  });
+
+  it("replaces | with l in the middle of a word", () => {
+    expect(correctOcrSubstitutions("on|y")).toBe("only");
+  });
+
+  it("replaces multiple | occurrences between lowercase letters", () => {
+    expect(correctOcrSubstitutions("c|ear|y")).toBe("clearly");
+  });
+
+  it("does not replace | that is not flanked by lowercase on both sides", () => {
+    // | at start of string with no preceding lowercase — not corrected by the
+    // lowercase-flanked rule; only the word-boundary-uppercase rule applies
+    expect(correctOcrSubstitutions("A|B")).toBe("A|B");
+  });
+});
+
+describe("correctOcrSubstitutions — pipe misread as capital I (standalone token)", () => {
+  it("replaces a standalone | surrounded by spaces with I", () => {
+    expect(correctOcrSubstitutions("She and | both went")).toBe("She and I both went");
+  });
+
+  it("replaces | at the start of a string when followed by a space", () => {
+    expect(correctOcrSubstitutions("| went to the store")).toBe("I went to the store");
+  });
+
+  it("replaces | at the end of a line when preceded by a space", () => {
+    expect(correctOcrSubstitutions("She and |")).toBe("She and I");
+  });
+
+  it("replaces multiple standalone pipes in one pass", () => {
+    expect(correctOcrSubstitutions("| saw | leave")).toBe("I saw I leave");
+  });
+
+  it("does not replace | that is flanked by non-space characters", () => {
+    // | between word characters is handled by the lowercase-l rule, not the I rule
+    expect(correctOcrSubstitutions("A|B")).toBe("A|B");
+  });
+});
+
+describe("correctOcrSubstitutions — zero misread as letter o", () => {
+  it("replaces 0 with o between lowercase letters", () => {
+    expect(correctOcrSubstitutions("c0mputer")).toBe("computer");
+  });
+
+  it("replaces 0 in the middle of a word", () => {
+    expect(correctOcrSubstitutions("w0rd")).toBe("word");
+  });
+
+  it("replaces multiple zeros between lowercase letters", () => {
+    // "b0tt0m": both 0s are flanked by lowercase on each side → both → "o"
+    expect(correctOcrSubstitutions("b0tt0m")).toBe("bottom");
+  });
+
+  it("does not replace 0 when not between lowercase letters", () => {
+    // Standalone number or between non-lowercase characters
+    expect(correctOcrSubstitutions("100")).toBe("100");
+    expect(correctOcrSubstitutions("A0B")).toBe("A0B");
+  });
+
+  it("does not replace 0 that follows an uppercase letter", () => {
+    expect(correctOcrSubstitutions("V0ice")).toBe("V0ice");
+  });
+});
+
+describe("correctOcrSubstitutions — digit-one misread as lowercase L at word start", () => {
+  it("replaces 1 with l at the start of a word followed by 2+ lowercase letters", () => {
+    expect(correctOcrSubstitutions("1azy")).toBe("lazy");
+  });
+
+  it("replaces 1 at word start in a sentence", () => {
+    expect(correctOcrSubstitutions("The 1ion roared")).toBe("The lion roared");
+  });
+
+  it("does not replace 1 that is not at a word boundary", () => {
+    // Mid-word digit — could be intentional (e.g. "qu1ck" is ambiguous)
+    expect(correctOcrSubstitutions("qu1ck")).toBe("qu1ck");
+  });
+
+  it("does not replace standalone number 1", () => {
+    expect(correctOcrSubstitutions("Chapter 1")).toBe("Chapter 1");
+  });
+
+  it("does not replace 1 followed by only one lowercase letter", () => {
+    // Threshold is 2+ lowercase letters to avoid false positives on
+    // abbreviations or section labels like "1a" or "1b"
+    expect(correctOcrSubstitutions("1a")).toBe("1a");
+  });
+});
+
+describe("correctOcrSubstitutions — combined substitutions", () => {
+  it("applies all substitution types in a single pass", () => {
+    // "|" between lowercase → l, "0" between lowercase → o, "1" at word start → l
+    const input = "samp|e c0mputer 1ong";
+    expect(correctOcrSubstitutions(input)).toBe("sample computer long");
+  });
+
+  it("does not corrupt normal text that happens to contain digits", () => {
+    const input = "Chapter 1: 100 pages of OCR.";
+    expect(correctOcrSubstitutions(input)).toBe("Chapter 1: 100 pages of OCR.");
+  });
+
+  it("round-trips clean text without modification", () => {
+    const input = "The quick brown fox jumps over the lazy dog.";
+    expect(correctOcrSubstitutions(input)).toBe(input);
+  });
+});
+
+describe("correctOcrSubstitutions — integration with sanitizeOcrText", () => {
+  it("sanitizeOcrText applies substitution corrections to OCR output", () => {
+    // samp|e → sample via the lowercase-flanked-pipe rule
+    const input = "samp|e paragraph\nc0mputer science";
+    const result = sanitizeOcrText(input);
+    expect(result).toContain("sample");
+    expect(result).toContain("computer");
+  });
+
+  it("sanitizeOcrText corrects pipe-for-l substitutions in real-world OCR noise", () => {
+    // Each | is flanked by lowercase letters on both sides → corrected to "l"
+    const input = "The on|y way to rea|ly understand";
+    const result = sanitizeOcrText(input);
+    expect(result).toContain("only");
+    expect(result).toContain("really");
   });
 });
 
