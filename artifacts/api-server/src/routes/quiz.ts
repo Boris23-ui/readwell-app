@@ -100,7 +100,7 @@ RULES — all must be followed:
 - Questions must be specific to THIS passage — not generic comprehension questions`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
