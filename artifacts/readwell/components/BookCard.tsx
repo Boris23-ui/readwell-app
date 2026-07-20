@@ -50,6 +50,11 @@ export function BookCard({ book, onPress }: Props) {
               </Text>
             </View>
           )}
+          {book.ocrUsed && (
+            <View style={[styles.badge, { backgroundColor: '#F59E0B18' }]}>
+              <Text style={[styles.badgeText, { color: '#B45309' }]}>Scanned PDF</Text>
+            </View>
+          )}
           {book.status === 'finished' && (
             <View style={[styles.badge, { backgroundColor: '#22C55E20' }]}>
               <Text style={[styles.badgeText, { color: '#22C55E' }]}>Finished</Text>

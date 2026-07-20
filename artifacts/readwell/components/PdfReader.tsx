@@ -312,6 +312,15 @@ export default function PdfReader({ book }: { book: Book }) {
           </Text>
         </View>
 
+        {book.ocrUsed && (
+          <View style={styles.ocrBanner}>
+            <Feather name="alert-triangle" size={13} color="#92400E" />
+            <Text style={styles.ocrBannerText}>
+              Scanned document — text was extracted via OCR and may contain errors
+            </Text>
+          </View>
+        )}
+
         {sectionPages.map(page => {
           const aspect = page.width && page.height ? page.width / page.height : DEFAULT_ASPECT;
           const uri = resolveStorageUrl(page.imageUrl);
@@ -484,4 +493,21 @@ const styles = StyleSheet.create({
   overlayClose: { position: 'absolute', top: 50, right: 20 },
   overlayHint: { position: 'absolute', bottom: 50, alignSelf: 'center' },
   overlayHintText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: 'Inter_400Regular' },
+  ocrBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  ocrBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: '#92400E',
+    lineHeight: 17,
+  },
 });

@@ -64,6 +64,7 @@ interface RenderedPage {
   width: number;
   height: number;
   text: string;
+  ocrUsed: boolean;
 }
 
 router.post("/render-pdf", upload.single("file"), async (req, res) => {
@@ -112,6 +113,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
     );
 
     const pages: RenderedPage[] = [];
+    let anyOcrUsed = false;
 
     for (let p = 1; p <= pageCount; p++) {
       // pdftoppm zero-pads the page number to the width of the total count
@@ -149,6 +151,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
       // If the page has little or no text, it is likely a scanned image —
       // run Tesseract OCR on the rendered JPEG to recover the text.
       const MIN_TEXT_CHARS = 100;
+      let pageOcrUsed = false;
       if (text.length < MIN_TEXT_CHARS) {
         try {
           const { stdout: ocrOut } = await execFileAsync(
@@ -160,6 +163,8 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
           if (ocrText.length > text.length) {
             logger.info({ page: p, chars: ocrText.length }, "OCR text used for page");
             text = ocrText;
+            pageOcrUsed = true;
+            anyOcrUsed = true;
           }
         } catch (e) {
           logger.warn({ err: e, page: p }, "OCR fallback failed");
@@ -178,13 +183,14 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
         width: size.width,
         height: size.height,
         text,
+        ocrUsed: pageOcrUsed,
       });
     }
 
     const rawName = originalname.replace(/\.[^.]+$/, "");
     const suggestedTitle = rawName.replace(/[-_]/g, " ").replace(/\s{2,}/g, " ").trim();
 
-    res.json({ bookId, suggestedTitle, pageCount, pages });
+    res.json({ bookId, suggestedTitle, pageCount, pages, ocrUsed: anyOcrUsed });
   } catch (err) {
     logger.error({ err, filename: originalname }, "PDF render failed");
     res.status(500).json({ error: "Failed to render PDF pages." });

@@ -487,6 +487,7 @@ export default function ImportScreen() {
           coverColor: randomCoverColor(),
           sourceType: 'pdf',
           pages,
+          ocrUsed: pdfData.ocrUsed ?? false,
         };
       } else {
         const paragraphs = splitIntoParagraphs(content.trim());

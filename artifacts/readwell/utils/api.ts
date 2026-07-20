@@ -27,6 +27,7 @@ export interface RenderedPdfPage {
   width: number;
   height: number;
   text: string;
+  ocrUsed?: boolean;
 }
 
 export interface RenderPdfResult {
@@ -34,6 +35,7 @@ export interface RenderPdfResult {
   suggestedTitle: string;
   pageCount: number;
   pages: RenderedPdfPage[];
+  ocrUsed?: boolean;
 }
 
 export async function renderPdf(file: File): Promise<RenderPdfResult> {

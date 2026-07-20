@@ -69,6 +69,8 @@ export interface Book {
   sourceType?: BookSourceType;
   // Present only for sourceType === 'pdf'.
   pages?: PdfPage[];
+  // True when at least one page was processed via OCR (scanned document).
+  ocrUsed?: boolean;
 }
 
 export interface Segment {
