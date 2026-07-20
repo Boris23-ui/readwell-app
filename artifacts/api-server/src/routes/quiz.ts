@@ -28,14 +28,18 @@ router.post("/quiz/generate", async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    res.status(500).json({ error: "Gemini API key not configured" });
+  const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  const baseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  if (!apiKey || !baseUrl) {
+    res.status(500).json({ error: "Replit AI integration not configured" });
     return;
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { apiVersion: "", baseUrl },
+    });
 
     const truncated = segmentText.slice(0, 3000);
 
@@ -100,7 +104,7 @@ RULES — all must be followed:
 - Questions must be specific to THIS passage — not generic comprehension questions`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
