@@ -24,7 +24,7 @@ router.post("/quiz/generate", async (req, res) => {
   };
 
   if (!segmentText || typeof segmentText !== "string" || segmentText.trim().length < 50) {
-    res.status(400).json({ error: "segmentText is required and must be at least 50 characters" });
+    res.status(400).json({ error: "segmentText is required and must be at least 50 characters", code: "TEXT_TOO_SHORT" });
     return;
   }
 

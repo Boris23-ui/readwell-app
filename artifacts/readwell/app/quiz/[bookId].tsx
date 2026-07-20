@@ -77,7 +77,11 @@ export default function QuizScreen() {
       })
       .catch(err => {
         console.error('Quiz generation error:', err);
-        setLoadError('Could not generate quiz. Please try again.');
+        if (err?.code === 'TEXT_TOO_SHORT') {
+          setLoadError('Text quality too low to generate a useful quiz for this section. The scanned text may be too garbled or short.');
+        } else {
+          setLoadError('Could not generate quiz. Please try again.');
+        }
         setLoading(false);
       });
   }, [book, segmentIndex, bookId]);

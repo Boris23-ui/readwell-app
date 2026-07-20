@@ -90,7 +90,9 @@ export async function generateQuiz(
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error((err as any).error ?? 'Failed to generate quiz');
+    const error = new Error((err as any).error ?? 'Failed to generate quiz') as Error & { code?: string };
+    error.code = (err as any).code;
+    throw error;
   }
   return response.json();
 }
