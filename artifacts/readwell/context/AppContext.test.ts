@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inferOcrUsed, applyOcrMigration } from './AppContext';
+import { inferOcrUsed, applyOcrMigration, parsePendingImports } from './AppContext';
 import type { Book, PdfPage } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -246,5 +246,47 @@ describe('applyOcrMigration', () => {
     // Returned object must be a new reference with the field set
     expect(books[0]).not.toBe(original);
     expect(books[0].ocrUsed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parsePendingImports — defensive parsing for AsyncStorage corruption
+// ---------------------------------------------------------------------------
+
+describe('parsePendingImports', () => {
+  it('returns null for null input', () => {
+    expect(parsePendingImports(null)).toBeNull();
+  });
+
+  it('returns an empty array for valid JSON with an empty array', () => {
+    expect(parsePendingImports('[]')).toEqual([]);
+  });
+
+  it('returns parsed entries for valid JSON with valid entries', () => {
+    const entries = [
+      { serverBookId: 'book-a', registeredAt: '2026-01-01T00:00:00.000Z' },
+      { serverBookId: 'book-b', registeredAt: '2026-01-02T00:00:00.000Z' },
+    ];
+    expect(parsePendingImports(JSON.stringify(entries))).toEqual(entries);
+  });
+
+  it('returns null for malformed JSON instead of throwing', () => {
+    expect(parsePendingImports('{not valid json')).toBeNull();
+  });
+
+  it('returns null when the stored value is not an array', () => {
+    expect(parsePendingImports('{"serverBookId":"book-a"}')).toBeNull();
+  });
+
+  it('filters out entries that are missing required fields', () => {
+    const mixed = [
+      { serverBookId: 'valid-book', registeredAt: '2026-01-01T00:00:00.000Z' },
+      { serverBookId: 'missing-registeredAt' },
+      { registeredAt: 'missing-serverBookId' },
+      'not-an-object',
+      null,
+    ];
+    const result = parsePendingImports(JSON.stringify(mixed));
+    expect(result).toEqual([{ serverBookId: 'valid-book', registeredAt: '2026-01-01T00:00:00.000Z' }]);
   });
 });

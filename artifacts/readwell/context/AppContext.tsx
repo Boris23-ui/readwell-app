@@ -87,6 +87,30 @@ function todayString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+/**
+ * Safely parse the raw PENDING_PDF_IMPORTS value from AsyncStorage.
+ *
+ * Returns an array of pending imports if the value is valid JSON matching the
+ * expected shape. Returns `null` when the value is null, empty, or malformed —
+ * this lets the app continue loading and skip orphan cleanup instead of
+ * crashing the whole load() with a JSON.parse error.
+ */
+export function parsePendingImports(raw: string | null): PendingPdfImport[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (item): item is PendingPdfImport =>
+          item && typeof item.serverBookId === 'string' && typeof item.registeredAt === 'string',
+      );
+    }
+  } catch (e) {
+    console.warn('parsePendingImports: stored value is malformed, skipping orphan cleanup', e);
+  }
+  return null;
+}
+
 const STORAGE_KEYS = {
   PROFILE: '@readwell/profile',
   BOOKS: '@readwell/books',
@@ -211,8 +235,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // book was saved, page images sit in storage forever. On every launch
         // we look for pending imports that are (a) older than the grace period
         // and (b) not present in any saved book, then delete their images.
-        if (pendingRaw) {
-          const pending: PendingPdfImport[] = JSON.parse(pendingRaw);
+        //
+        // parsePendingImports is wrapped in its own try/catch: if the stored
+        // value is malformed JSON (e.g. mid-write corruption), we skip cleanup
+        // and continue loading rather than letting the error abort the whole
+        // load() function.
+        const pending = parsePendingImports(pendingRaw);
+        if (pending !== null) {
           const { stillPending } = await runOrphanCleanup(
             pending,
             savedBooks,
