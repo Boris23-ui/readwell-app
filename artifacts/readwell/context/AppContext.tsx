@@ -61,10 +61,11 @@ export function applyOcrMigration(books: Book[]): { books: Book[]; dirty: boolea
   const updated = books.map(book => {
     if (book.sourceType === 'pdf' && book.ocrUsed === undefined && book.pages?.length) {
       const inferred = inferOcrUsed(book.pages);
-      if (inferred !== undefined) {
-        dirty = true;
-        return { ...book, ocrUsed: inferred };
-      }
+      // When inferOcrUsed returns undefined (no page text), store null as a
+      // sentinel so the migration does not re-run on every subsequent launch.
+      // null is treated the same as false by badge-display logic (falsy).
+      dirty = true;
+      return { ...book, ocrUsed: inferred ?? null };
     }
     return book;
   });

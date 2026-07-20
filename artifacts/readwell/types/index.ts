@@ -72,7 +72,9 @@ export interface Book {
   // Present only for sourceType === 'pdf'.
   pages?: PdfPage[];
   // True when at least one page was processed via OCR (scanned document).
-  ocrUsed?: boolean;
+  // null means inference was attempted but no page text was available; the
+  // migration skips such books on future launches to avoid re-running on blank pages.
+  ocrUsed?: boolean | null;
 }
 
 export interface Segment {

@@ -277,14 +277,25 @@ describe('applyOcrMigration', () => {
     expect(books[0].ocrUsed).toBeUndefined();
   });
 
-  it('skips PDF books whose pages all have empty text (inferOcrUsed returns undefined)', () => {
+  it('marks PDF books with all-empty page text as ocrUsed=null (sentinel) so the migration is not re-run', () => {
     const book = makePdfBook({ pages: makePages(['', '']) });
 
     const { books, dirty } = applyOcrMigration([book]);
 
+    // dirty=true so the sentinel is persisted and inference is skipped on future launches
+    expect(dirty).toBe(true);
+    // null signals "attempted but indeterminate" — badge logic treats it as falsy (no badge shown)
+    expect(books[0].ocrUsed).toBeNull();
+  });
+
+  it('skips PDF books that already have ocrUsed=null (sentinel already written)', () => {
+    const book = makePdfBook({ pages: makePages(['', '']), ocrUsed: null });
+
+    const { books, dirty } = applyOcrMigration([book]);
+
     expect(dirty).toBe(false);
-    // ocrUsed stays undefined — cannot infer from blank text
-    expect(books[0].ocrUsed).toBeUndefined();
+    expect(books[0].ocrUsed).toBeNull();
+    expect(books[0]).toBe(book); // same reference — not cloned
   });
 
   it('returns dirty=false and an empty list for an empty input', () => {
