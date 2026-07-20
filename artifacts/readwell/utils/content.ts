@@ -60,3 +60,27 @@ export function randomCoverColor(): string {
 export function estimateReadMinutes(wordCount: number): number {
   return Math.max(1, Math.ceil(wordCount / 200));
 }
+
+/**
+ * Checks whether segment text has sufficient quality for quiz generation.
+ * Returns true when the text is too garbled to produce a useful quiz.
+ *
+ * Two signals are checked:
+ * 1. Word count — OCR noise often yields very few meaningful tokens.
+ * 2. Alphabetic-character ratio — garbled text is full of symbols / numbers.
+ */
+export function isTextQualityTooLow(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return true;
+
+  // Must have at least 30 words
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  if (words.length < 30) return true;
+
+  // At least 45 % of all characters must be alphabetic letters
+  const alphaCount = (trimmed.match(/[a-zA-Z]/g) ?? []).length;
+  const ratio = alphaCount / trimmed.length;
+  if (ratio < 0.45) return true;
+
+  return false;
+}

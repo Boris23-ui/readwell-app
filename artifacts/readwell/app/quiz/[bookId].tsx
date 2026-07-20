@@ -19,6 +19,7 @@ import { useApp } from '@/context/AppContext';
 import { generateQuiz } from '@/utils/api';
 import { Question, Quiz } from '@/types';
 import { calculateSessionXp } from '@/utils/xp';
+import { isTextQualityTooLow } from '@/utils/content';
 
 export default function QuizScreen() {
   const params = useLocalSearchParams<{
@@ -59,6 +60,14 @@ export default function QuizScreen() {
 
     // Generate quiz
     const segmentText = segment.paragraphs.join('\n\n');
+
+    // Guard against garbled OCR text before hitting the API
+    if (isTextQualityTooLow(segmentText)) {
+      setLoadError('Text quality too low to generate a useful quiz for this section. The scanned text may be too garbled or short.');
+      setLoading(false);
+      return;
+    }
+
     generateQuiz(segmentText, profile.readingLevel ?? 'intermediate')
       .then(data => {
         const q: Quiz = { questions: data.questions };
@@ -99,18 +108,51 @@ export default function QuizScreen() {
   }
 
   if (loadError || !quiz) {
+    const isQualityError = loadError.startsWith('Text quality too low');
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Feather name="alert-circle" size={32} color={colors.destructive} />
+        <Feather
+          name={isQualityError ? 'alert-triangle' : 'alert-circle'}
+          size={32}
+          color={isQualityError ? colors.mutedForeground : colors.destructive}
+        />
         <Text style={[styles.errorTxt, { color: colors.foreground }]}>
           {loadError || 'Failed to load quiz'}
         </Text>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-        >
-          <Text style={styles.retryBtnText}>Go back</Text>
-        </TouchableOpacity>
+        {isQualityError ? (
+          <>
+            <TouchableOpacity
+              onPress={() => {
+                const minutesRead = Math.floor(secondsRead / 60);
+                const xpEarned = calculateSessionXp(minutesRead, 0, 0, false);
+                router.replace({
+                  pathname: '/session-summary/[bookId]',
+                  params: {
+                    bookId: book.id,
+                    segmentIndex: String(segmentIndex),
+                    score: '0',
+                    total: '0',
+                    xpEarned: String(xpEarned),
+                    secondsRead: String(secondsRead),
+                  },
+                });
+              }}
+              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.retryBtnText}>Skip quiz</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.retryBtnText}>Go back</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
