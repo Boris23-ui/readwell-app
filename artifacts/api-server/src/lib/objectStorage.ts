@@ -216,6 +216,20 @@ export class ObjectStorageService {
     return normalizedPath;
   }
 
+  // Deletes all page images stored under pdf-pages/<bookId>/ in the private dir.
+  async deletePdfPages(bookId: string): Promise<void> {
+    let entityDir = this.getPrivateObjectDir();
+    if (!entityDir.endsWith('/')) {
+      entityDir = `${entityDir}/`;
+    }
+    const prefix = `${entityDir}pdf-pages/${bookId}/`;
+    const { bucketName, objectName: prefixObject } = parseObjectPath(prefix);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const [files] = await bucket.getFiles({ prefix: prefixObject });
+    if (files.length === 0) return;
+    await Promise.all(files.map(f => f.delete({ ignoreNotFound: true })));
+  }
+
   async canAccessObjectEntity({
     userId,
     objectFile,

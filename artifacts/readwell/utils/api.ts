@@ -59,6 +59,20 @@ export function resolveStorageUrl(objectPath: string): string {
   return `${BASE_URL}/api/storage${objectPath}`;
 }
 
+// Deletes rendered page images for a PDF book from storage (best-effort; logs on failure).
+export async function deletePdfPages(bookId: string): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/pdf/pages/${encodeURIComponent(bookId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      console.warn(`deletePdfPages: server returned ${res.status} for bookId ${bookId}`);
+    }
+  } catch (e) {
+    console.warn('deletePdfPages: network error', e);
+  }
+}
+
 export async function generateQuiz(
   segmentText: string,
   readingLevel: string,

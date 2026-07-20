@@ -19,7 +19,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Book, Segment } from '@/types';
 import { splitIntoParagraphs, groupIntoSegments, buildPdfSegments, countWords, randomCoverColor } from '@/utils/content';
-import { extractTextFromFile, renderPdf, RenderPdfResult } from '@/utils/api';
+import { extractTextFromFile, renderPdf, RenderPdfResult, deletePdfPages } from '@/utils/api';
 
 // Mobile-only import — resolved at runtime so web bundle is not affected
 let DocumentPicker: typeof import('expo-document-picker') | null = null;
@@ -534,7 +534,16 @@ export default function ImportScreen() {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={[styles.header, { paddingTop: topPad }]}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={() => {
+              // Clean up any rendered-but-unsaved PDF pages before leaving
+              if (pdfData) {
+                deletePdfPages(pdfData.bookId).catch(() => {});
+              }
+              router.back();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Feather name="x" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Add Book</Text>
@@ -602,6 +611,10 @@ export default function ImportScreen() {
                 isPdf={!!pdfData}
                 pageCount={pdfData?.pageCount}
                 onClear={() => {
+                  // Clean up rendered page images that were never saved as a book
+                  if (pdfData) {
+                    deletePdfPages(pdfData.bookId).catch(() => {});
+                  }
                   setSourceFile(null);
                   setContent('');
                   setPdfData(null);

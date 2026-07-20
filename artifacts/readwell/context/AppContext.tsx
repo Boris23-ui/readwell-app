@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile, Book, ReadingSession, DailyActivity, BadgeKey, Segment, Quiz } from '@/types';
+import { deletePdfPages } from '@/utils/api';
 
 function getLevelFromXp(totalXp: number): number {
   let level = 1;
@@ -121,7 +122,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteBook = useCallback(async (id: string) => {
+    // For PDF books, find the server-side bookId from the first page image URL
+    // (format: /objects/pdf-pages/<server-bookId>/<page>.jpg) and delete the images.
     setBooks(prev => {
+      const book = prev.find(b => b.id === id);
+      if (book?.sourceType === 'pdf' && book.pages && book.pages.length > 0) {
+        const imageUrl = book.pages[0].imageUrl;
+        // Extract <server-bookId> from "/objects/pdf-pages/<server-bookId>/..."
+        const match = imageUrl.match(/\/objects\/pdf-pages\/([^/]+)\//);
+        if (match) {
+          deletePdfPages(match[1]).catch(() => {
+            // Best-effort — log but don't block the deletion
+            console.warn('Failed to delete PDF page images for book', id);
+          });
+        }
+      }
       const updated = prev.filter(b => b.id !== id);
       AsyncStorage.setItem(STORAGE_KEYS.BOOKS, JSON.stringify(updated));
       return updated;

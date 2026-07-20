@@ -193,4 +193,22 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
   }
 });
 
+// DELETE /pdf/pages/:bookId — remove all rendered page images for a book
+router.delete("/pdf/pages/:bookId", async (req, res) => {
+  const { bookId } = req.params;
+  // Validate: must be a UUID (36 chars, hex + dashes)
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookId)) {
+    res.status(400).json({ error: "Invalid bookId" });
+    return;
+  }
+  try {
+    await objectStorage.deletePdfPages(bookId);
+    logger.info({ bookId }, "Deleted PDF page images");
+    res.status(204).end();
+  } catch (err) {
+    logger.error({ err, bookId }, "Failed to delete PDF page images");
+    res.status(500).json({ error: "Failed to delete PDF page images." });
+  }
+});
+
 export default router;
