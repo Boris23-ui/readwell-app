@@ -12,6 +12,8 @@
  * Covers POST /api/render-pdf — partial-import cleanup:
  *  - when uploadBuffer throws after uploading some pages, deletePdfPages is
  *    called for that bookId so no files are stranded in storage
+ *  - deleteOrphanedPdfPageFolders is invoked on every render-pdf request
+ *  - failures in deleteOrphanedPdfPageFolders never block or fail the response
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
@@ -20,10 +22,11 @@ import request from "supertest";
 // vi.hoisted() lets us declare mock fns that are accessible inside the
 // vi.mock() factory even after it is hoisted to the top of the file.
 // ---------------------------------------------------------------------------
-const { mockDeletePdfPages, mockUploadBuffer } = vi.hoisted(() => {
+const { mockDeletePdfPages, mockUploadBuffer, mockDeleteOrphanedPdfPageFolders } = vi.hoisted(() => {
   return {
     mockDeletePdfPages: vi.fn(),
     mockUploadBuffer: vi.fn(),
+    mockDeleteOrphanedPdfPageFolders: vi.fn(),
   };
 });
 
@@ -31,6 +34,7 @@ vi.mock("../lib/objectStorage", () => {
   class ObjectStorageService {
     deletePdfPages = mockDeletePdfPages;
     uploadBuffer = mockUploadBuffer;
+    deleteOrphanedPdfPageFolders = mockDeleteOrphanedPdfPageFolders;
     getObjectEntityFile = vi.fn();
     downloadObject = vi.fn();
     searchPublicObject = vi.fn();
@@ -192,6 +196,8 @@ describe("POST /api/render-pdf — partial-import cleanup", () => {
     vi.clearAllMocks();
     // deletePdfPages must succeed so cleanup doesn't throw in the catch handler
     mockDeletePdfPages.mockResolvedValue(undefined);
+    // Orphan cleanup runs fire-and-forget on every request — resolve by default
+    mockDeleteOrphanedPdfPageFolders.mockResolvedValue(undefined);
   });
 
   it("calls deletePdfPages to clean up stranded pages when uploadBuffer throws mid-import", async () => {
@@ -227,5 +233,59 @@ describe("POST /api/render-pdf — partial-import cleanup", () => {
 
     // deletePdfPages should only be triggered on failure, never on success
     expect(mockDeletePdfPages).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — POST /api/render-pdf — server-side orphan cleanup
+// ---------------------------------------------------------------------------
+describe("POST /api/render-pdf — server-side orphan cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDeletePdfPages.mockResolvedValue(undefined);
+    mockDeleteOrphanedPdfPageFolders.mockResolvedValue(undefined);
+  });
+
+  it("invokes deleteOrphanedPdfPageFolders on every render-pdf request", async () => {
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    expect(mockDeleteOrphanedPdfPageFolders).toHaveBeenCalledOnce();
+    // TTL should be a positive number (2 hours in ms)
+    const [ttlMs] = mockDeleteOrphanedPdfPageFolders.mock.calls[0];
+    expect(typeof ttlMs).toBe("number");
+    expect(ttlMs).toBeGreaterThan(0);
+  });
+
+  it("does not fail the response when deleteOrphanedPdfPageFolders rejects", async () => {
+    // Orphan cleanup failure must be swallowed — the render-pdf response
+    // should still succeed (200) even when cleanup throws.
+    mockDeleteOrphanedPdfPageFolders.mockRejectedValue(new Error("GCS scan failed"));
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    const res = await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    expect(res.body).toHaveProperty("bookId");
+  });
+
+  it("does not fail the response when deleteOrphanedPdfPageFolders rejects and upload also fails", async () => {
+    // Both cleanup and upload fail — the route should still return 500 with
+    // an error body (cleanup failure must not mask the real error).
+    mockDeleteOrphanedPdfPageFolders.mockRejectedValue(new Error("GCS scan failed"));
+    mockUploadBuffer.mockRejectedValueOnce(new Error("GCS write failed"));
+
+    const res = await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(500);
+
+    expect(res.body).toHaveProperty("error");
   });
 });

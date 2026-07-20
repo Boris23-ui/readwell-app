@@ -91,7 +91,18 @@ interface RenderedPage {
   ocrUsed: boolean;
 }
 
+// expiresAt gives clients a hint for when orphaned page images may be
+// lazily cleaned up (2 h after upload). Pages should be promoted to a
+// saved book before this time, or explicitly deleted by the client.
+const PDF_PAGES_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 router.post("/render-pdf", upload.single("file"), async (req, res) => {
+  // Fire-and-forget: lazily clean up any orphaned pdf-pages folders older
+  // than the TTL. This runs asynchronously so it never delays the response.
+  objectStorage.deleteOrphanedPdfPageFolders(PDF_PAGES_TTL_MS).catch((err) => {
+    logger.warn({ err }, "Orphaned PDF pages cleanup failed");
+  });
+
   if (!req.file) {
     res.status(400).json({ error: "No file uploaded" });
     return;
@@ -214,10 +225,6 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
     const rawName = originalname.replace(/\.[^.]+$/, "");
     const suggestedTitle = rawName.replace(/[-_]/g, " ").replace(/\s{2,}/g, " ").trim();
 
-    // expiresAt gives clients a hint for when orphaned page images may be
-    // lazily cleaned up (2 h after upload). Pages should be promoted to a
-    // saved book before this time, or explicitly deleted by the client.
-    const PDF_PAGES_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
     const expiresAt = new Date(Date.now() + PDF_PAGES_TTL_MS).toISOString();
 
     res.json({ bookId, suggestedTitle, pageCount, pages, ocrUsed: anyOcrUsed, expiresAt });

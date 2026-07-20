@@ -230,6 +230,49 @@ export class ObjectStorageService {
     await Promise.all(files.map(f => f.delete({ ignoreNotFound: true })));
   }
 
+  // Lists all bookIds whose pdf-pages folder has files older than ttlMs,
+  // then deletes each one. Best-effort: errors per-folder are swallowed.
+  async deleteOrphanedPdfPageFolders(ttlMs: number): Promise<void> {
+    let entityDir = this.getPrivateObjectDir();
+    if (!entityDir.endsWith('/')) {
+      entityDir = `${entityDir}/`;
+    }
+    const prefix = `${entityDir}pdf-pages/`;
+    const { bucketName, objectName: prefixObject } = parseObjectPath(prefix);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const [files] = await bucket.getFiles({ prefix: prefixObject });
+    if (files.length === 0) return;
+
+    // Group files by bookId (the path component immediately after pdf-pages/)
+    const bookIdToLatestTime = new Map<string, number>();
+    for (const file of files) {
+      // objectName looks like: <entityDir>/pdf-pages/<bookId>/<page>.jpg
+      const afterPrefix = file.name.slice(prefixObject.length);
+      const bookId = afterPrefix.split('/')[0];
+      if (!bookId) continue;
+      const timeCreated = file.metadata?.timeCreated
+        ? new Date(file.metadata.timeCreated as string).getTime()
+        : 0;
+      const existing = bookIdToLatestTime.get(bookId) ?? 0;
+      if (timeCreated > existing) {
+        bookIdToLatestTime.set(bookId, timeCreated);
+      }
+    }
+
+    const cutoff = Date.now() - ttlMs;
+    const deletions: Promise<void>[] = [];
+    for (const [bookId, latestTime] of bookIdToLatestTime) {
+      if (latestTime < cutoff) {
+        deletions.push(
+          this.deletePdfPages(bookId).catch(() => {
+            // best-effort: ignore per-folder errors
+          }),
+        );
+      }
+    }
+    await Promise.all(deletions);
+  }
+
   async canAccessObjectEntity({
     userId,
     objectFile,
