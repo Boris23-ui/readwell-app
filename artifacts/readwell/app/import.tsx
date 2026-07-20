@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -18,18 +19,398 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Book, Segment } from '@/types';
 import { splitIntoParagraphs, groupIntoSegments, countWords, randomCoverColor } from '@/utils/content';
+import { extractTextFromFile } from '@/utils/api';
+
+// Mobile-only import — resolved at runtime so web bundle is not affected
+let DocumentPicker: typeof import('expo-document-picker') | null = null;
+if (Platform.OS !== 'web') {
+  try {
+    DocumentPicker = require('expo-document-picker');
+  } catch {}
+}
+
+const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown'];
+const ACCEPTED_MIME = 'application/pdf,text/plain,text/markdown,text/html';
+
+// ─── File Drop Zone (web-only inner component) ───────────────────────────────
+
+function WebDropZone({
+  onFile,
+  isDragging,
+  setIsDragging,
+  isExtracting,
+  colors,
+}: {
+  onFile: (file: File) => void;
+  isDragging: boolean;
+  setIsDragging: (v: boolean) => void;
+  isExtracting: boolean;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      const file = e.dataTransfer.files?.[0];
+      if (file) onFile(file);
+    },
+    [onFile, setIsDragging],
+  );
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onFile(file);
+    // Reset so the same file can be re-selected
+    if (e.target) e.target.value = '';
+  };
+
+  return (
+    // @ts-ignore — div is valid inside React Native Web
+    <div
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDragEnter={(e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragging(true);
+      }}
+      style={{
+        borderRadius: 18,
+        borderWidth: 2,
+        borderStyle: isDragging ? 'solid' : 'dashed',
+        borderColor: isDragging ? colors.primary : colors.border,
+        backgroundColor: isDragging ? `${colors.primary}10` : colors.card,
+        padding: 32,
+        display: 'flex',
+        flexDirection: 'column' as const,
+        alignItems: 'center',
+        gap: 12,
+        cursor: 'pointer',
+        transition: 'all 0.15s ease',
+        position: 'relative',
+      }}
+      onClick={() => !isExtracting && inputRef.current?.click()}
+    >
+      {/* Hidden real file input */}
+      {/* @ts-ignore */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED_MIME}
+        style={{ display: 'none' }}
+        onChange={handleInputChange}
+      />
+
+      {isExtracting ? (
+        <>
+          {/* @ts-ignore */}
+          <div style={{ marginBottom: 4 }}>
+            <ActivityIndicator color={colors.primary} size="large" />
+          </div>
+          {/* @ts-ignore */}
+          <span style={{ fontSize: 16, fontWeight: '600', color: colors.foreground }}>
+            Extracting text…
+          </span>
+          {/* @ts-ignore */}
+          <span style={{ fontSize: 13, color: colors.mutedForeground }}>
+            This only takes a second
+          </span>
+        </>
+      ) : isDragging ? (
+        <>
+          {/* @ts-ignore */}
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: `${colors.primary}20`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Feather name="download" size={28} color={colors.primary} />
+          </div>
+          {/* @ts-ignore */}
+          <span style={{ fontSize: 17, fontWeight: '700', color: colors.primary }}>
+            Drop it here!
+          </span>
+        </>
+      ) : (
+        <>
+          {/* @ts-ignore */}
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: colors.muted,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 4,
+            }}
+          >
+            <Feather name="upload" size={26} color={colors.mutedForeground} />
+          </div>
+          {/* @ts-ignore */}
+          <span
+            style={{ fontSize: 16, fontWeight: '600', color: colors.foreground, textAlign: 'center' }}
+          >
+            Drop a file here
+          </span>
+          {/* @ts-ignore */}
+          <span
+            style={{ fontSize: 13, color: colors.mutedForeground, textAlign: 'center', lineHeight: '1.5' }}
+          >
+            or click to browse
+          </span>
+          {/* @ts-ignore */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              gap: 8,
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              marginTop: 4,
+            }}
+          >
+            {ACCEPTED_EXTENSIONS.map(ext => (
+              // @ts-ignore
+              <span
+                key={ext}
+                style={{
+                  fontSize: 11,
+                  fontWeight: '600',
+                  color: colors.mutedForeground,
+                  backgroundColor: colors.muted,
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                }}
+              >
+                {ext.replace('.', '')}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Mobile Picker Button ─────────────────────────────────────────────────────
+
+function MobilePickerButton({
+  onFilePicked,
+  isExtracting,
+  colors,
+}: {
+  onFilePicked: (uri: string, name: string, mimeType: string) => void;
+  isExtracting: boolean;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const handlePick = async () => {
+    if (!DocumentPicker) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'text/plain', 'text/markdown'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        onFilePicked(asset.uri, asset.name ?? 'document', asset.mimeType ?? 'application/octet-stream');
+      }
+    } catch (e) {
+      console.error('DocumentPicker error', e);
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={handlePick}
+      disabled={isExtracting}
+      style={[
+        styles.mobilePickerBtn,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          opacity: isExtracting ? 0.6 : 1,
+        },
+      ]}
+      activeOpacity={0.75}
+    >
+      {isExtracting ? (
+        <>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[styles.mobilePickerText, { color: colors.foreground }]}>
+            Extracting text…
+          </Text>
+        </>
+      ) : (
+        <>
+          <View style={[styles.mobilePickerIcon, { backgroundColor: colors.muted }]}>
+            <Feather name="upload" size={22} color={colors.mutedForeground} />
+          </View>
+          <View style={styles.mobilePickerLabel}>
+            <Text style={[styles.mobilePickerText, { color: colors.foreground }]}>
+              Choose a file
+            </Text>
+            <Text style={[styles.mobilePickerSub, { color: colors.mutedForeground }]}>
+              PDF, TXT, or Markdown
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ─── Extracted file badge ────────────────────────────────────────────────────
+
+function FileBadge({
+  filename,
+  charCount,
+  onClear,
+  colors,
+}: {
+  filename: string;
+  charCount: number;
+  onClear: () => void;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const isPdf = ext === 'pdf';
+
+  return (
+    <View style={[styles.fileBadge, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
+      <Feather name={isPdf ? 'file-text' : 'file'} size={18} color={colors.primary} />
+      <View style={styles.fileBadgeInfo}>
+        <Text style={[styles.fileBadgeName, { color: colors.foreground }]} numberOfLines={1}>
+          {filename}
+        </Text>
+        <Text style={[styles.fileBadgeMeta, { color: colors.mutedForeground }]}>
+          {(charCount / 1000).toFixed(1)}k characters extracted
+        </Text>
+      </View>
+      <TouchableOpacity onPress={onClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function ImportScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { addBook } = useApp();
+
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [content, setContent] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [sourceFile, setSourceFile] = useState<{ name: string; chars: number } | null>(null);
 
   const canProcess = title.trim().length > 0 && content.trim().length > 50;
+  const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
+
+  // ── Shared handler: receives extracted text from any source ──────────────
+
+  const applyExtractedText = (text: string, suggestedTitle: string, filename: string) => {
+    setContent(text);
+    if (!title.trim() && suggestedTitle) setTitle(suggestedTitle);
+    setSourceFile({ name: filename, chars: text.length });
+    setError('');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  // ── Web: file dropped / browsed ──────────────────────────────────────────
+
+  const handleWebFile = async (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!['pdf', 'txt', 'md', 'markdown', 'html', 'htm'].includes(ext)) {
+      setError(`Unsupported file type ".${ext}". Please use PDF, TXT, or Markdown.`);
+      return;
+    }
+
+    setExtracting(true);
+    setError('');
+
+    try {
+      if (ext === 'pdf') {
+        // PDF → backend
+        const result = await extractTextFromFile(file);
+        applyExtractedText(result.text, result.suggestedTitle, file.name);
+      } else {
+        // Plain text → read directly in browser
+        const text = await file.text();
+        const rawName = file.name.replace(/\.[^.]+$/, '');
+        const suggestedTitle = rawName.replace(/[-_]/g, ' ').trim();
+        applyExtractedText(text, suggestedTitle, file.name);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to extract text from file.');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // ── Mobile: document picked ──────────────────────────────────────────────
+
+  const handleMobileFile = async (uri: string, name: string, mimeType: string) => {
+    const ext = name.split('.').pop()?.toLowerCase() ?? '';
+
+    setExtracting(true);
+    setError('');
+
+    try {
+      if (mimeType === 'application/pdf' || ext === 'pdf') {
+        // Fetch the local file and send to backend as a Blob
+        const fileResponse = await fetch(uri);
+        const blob = await fileResponse.blob();
+        const file = new File([blob], name, { type: 'application/pdf' });
+        const result = await extractTextFromFile(file);
+        applyExtractedText(result.text, result.suggestedTitle, name);
+      } else {
+        // Plain text — read directly
+        const textResponse = await fetch(uri);
+        const text = await textResponse.text();
+        const rawName = name.replace(/\.[^.]+$/, '');
+        applyExtractedText(text, rawName.replace(/[-_]/g, ' ').trim(), name);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to read file.');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // ── Process (build book) ─────────────────────────────────────────────────
 
   const handleProcess = async () => {
     if (!canProcess) return;
@@ -40,7 +421,7 @@ export default function ImportScreen() {
     try {
       const paragraphs = splitIntoParagraphs(content.trim());
       if (paragraphs.length < 2) {
-        setError('Not enough content. Please paste at least a few paragraphs.');
+        setError('Not enough content. Please add at least a few paragraphs.');
         setProcessing(false);
         return;
       }
@@ -73,8 +454,6 @@ export default function ImportScreen() {
     }
   };
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
-
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -89,16 +468,16 @@ export default function ImportScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Add Book</Text>
           <TouchableOpacity
             onPress={handleProcess}
-            disabled={!canProcess || processing}
+            disabled={!canProcess || processing || extracting}
             style={[
               styles.addBtn,
-              { backgroundColor: canProcess ? colors.primary : colors.muted },
+              { backgroundColor: canProcess && !extracting ? colors.primary : colors.muted },
             ]}
           >
             {processing ? (
               <ActivityIndicator color="#FFF" size="small" />
             ) : (
-              <Text style={[styles.addBtnText, { color: canProcess ? '#FFF' : colors.mutedForeground }]}>
+              <Text style={[styles.addBtnText, { color: canProcess && !extracting ? '#FFF' : colors.mutedForeground }]}>
                 Add
               </Text>
             )}
@@ -111,15 +490,50 @@ export default function ImportScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Info banner */}
-          <View style={[styles.infoBanner, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
-            <Feather name="info" size={15} color={colors.primary} />
-            <Text style={[styles.infoText, { color: colors.primary }]}>
-              Paste any text — a book chapter, article, essay, or anything you want to read and understand deeply.
+          {/* ── File upload zone ─────────────────────────────── */}
+          <View style={styles.sectionBlock}>
+            <Text style={[styles.sectionLabel, { color: colors.foreground }]}>
+              Import from file
             </Text>
+
+            {Platform.OS === 'web' ? (
+              <WebDropZone
+                onFile={handleWebFile}
+                isDragging={isDragging}
+                setIsDragging={setIsDragging}
+                isExtracting={extracting}
+                colors={colors}
+              />
+            ) : (
+              <MobilePickerButton
+                onFilePicked={handleMobileFile}
+                isExtracting={extracting}
+                colors={colors}
+              />
+            )}
+
+            {/* Extracted file badge */}
+            {sourceFile && !extracting && (
+              <FileBadge
+                filename={sourceFile.name}
+                charCount={sourceFile.chars}
+                onClear={() => {
+                  setSourceFile(null);
+                  setContent('');
+                }}
+                colors={colors}
+              />
+            )}
           </View>
 
-          {/* Title field */}
+          {/* ── Divider ────────────────────────────────────── */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or paste text</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
+
+          {/* ── Title ──────────────────────────────────────── */}
           <View style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Title *</Text>
             <TextInput
@@ -132,7 +546,7 @@ export default function ImportScreen() {
             />
           </View>
 
-          {/* Author field */}
+          {/* ── Author ─────────────────────────────────────── */}
           <View style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Author (optional)</Text>
             <TextInput
@@ -145,30 +559,34 @@ export default function ImportScreen() {
             />
           </View>
 
-          {/* Content field */}
+          {/* ── Content ────────────────────────────────────── */}
           <View style={styles.field}>
             <View style={styles.contentHeader}>
               <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Content *</Text>
               {content.length > 0 && (
                 <Text style={[styles.wordCount, { color: colors.mutedForeground }]}>
-                  ~{countWords(content)} words
+                  ~{countWords(content).toLocaleString()} words
                 </Text>
               )}
             </View>
             <TextInput
               style={[
                 styles.contentInput,
-                { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground },
+                { backgroundColor: colors.card, borderColor: sourceFile ? `${colors.primary}50` : colors.border, color: colors.foreground },
               ]}
-              placeholder="Paste your text here. The app will automatically split it into reading segments with AI comprehension quizzes..."
+              placeholder="Paste your text here, or import a file above…"
               placeholderTextColor={colors.mutedForeground}
               value={content}
-              onChangeText={setContent}
+              onChangeText={v => {
+                setContent(v);
+                if (sourceFile) setSourceFile(null); // manual edit breaks file link
+              }}
               multiline
               textAlignVertical="top"
             />
           </View>
 
+          {/* ── Error ──────────────────────────────────────── */}
           {error.length > 0 && (
             <View style={[styles.errorBox, { backgroundColor: `${colors.destructive}12`, borderColor: `${colors.destructive}30` }]}>
               <Feather name="alert-circle" size={15} color={colors.destructive} />
@@ -176,11 +594,12 @@ export default function ImportScreen() {
             </View>
           )}
 
+          {/* ── Segment preview ────────────────────────────── */}
           {content.trim().length > 50 && (
             <View style={[styles.previewBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Feather name="layers" size={14} color={colors.mutedForeground} />
               <Text style={[styles.previewText, { color: colors.mutedForeground }]}>
-                ~{Math.max(1, Math.ceil(splitIntoParagraphs(content).length / 5))} reading segments
+                ~{Math.max(1, Math.ceil(splitIntoParagraphs(content).length / 5))} reading segments will be created
               </Text>
             </View>
           )}
@@ -202,16 +621,47 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
   addBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10, minWidth: 60, alignItems: 'center' },
   addBtnText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 40, gap: 18 },
-  infoBanner: {
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 60, gap: 18 },
+
+  // File upload section
+  sectionBlock: { gap: 10 },
+  sectionLabel: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
+
+  // Mobile picker
+  mobilePickerBtn: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 14,
+  },
+  mobilePickerIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  mobilePickerLabel: { flex: 1 },
+  mobilePickerText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
+  mobilePickerSub: { fontSize: 13, fontFamily: 'Inter_400Regular', marginTop: 2 },
+
+  // File badge
+  fileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderRadius: 12,
     borderWidth: 1,
-    padding: 12,
-    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+    marginTop: 4,
   },
-  infoText: { flex: 1, fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
+  fileBadgeInfo: { flex: 1 },
+  fileBadgeName: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
+  fileBadgeMeta: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 2 },
+
+  // Divider
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontSize: 13, fontFamily: 'Inter_400Regular' },
+
+  // Fields
   field: { gap: 8 },
   fieldLabel: { fontSize: 14, fontFamily: 'Inter_500Medium' },
   input: {
@@ -230,7 +680,7 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: 15,
     fontFamily: 'Inter_400Regular',
-    minHeight: 220,
+    minHeight: 180,
     lineHeight: 22,
   },
   errorBox: {

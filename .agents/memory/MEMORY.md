@@ -1,0 +1,1 @@
+- [Metro _tmp_ blocklist](metro-tmp-blocklist.md) — pnpm packages that create _tmp_ dirs crash Metro; block `/node_modules[/\\][^/\\]*_tmp_\d+/` in metro.config.js resolver.blockList
