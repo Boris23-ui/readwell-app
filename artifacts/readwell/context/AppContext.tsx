@@ -18,6 +18,39 @@ interface PendingPdfImport {
  */
 const PENDING_PDF_GRACE_MS = 60 * 60 * 1000; // 1 hour
 
+/**
+ * Heuristic: estimate whether a PDF book was processed via OCR.
+ *
+ * OCR output from scanned documents typically exhibits:
+ *   - Low ratio of alphabetic characters (lots of symbols / noise)
+ *   - Very short average word length (garbled tokens, lone punctuation)
+ *
+ * We sample up to 10 pages, combine their text, and flag the book as
+ * OCR-processed when the alphabetic-character ratio falls below 0.60 OR
+ * the average word length falls below 3.5 characters.  Either condition
+ * alone is a strong signal of OCR output.
+ *
+ * Returns `undefined` when there is no page text to analyse (cannot
+ * determine one way or the other).
+ */
+function inferOcrUsed(pages: { text: string }[]): boolean | undefined {
+  const sample = pages.slice(0, 10);
+  const combined = sample.map(p => p.text ?? '').join(' ').trim();
+  if (!combined) return undefined;
+
+  // Ratio of alphabetic characters to total non-whitespace characters
+  const nonWs = combined.replace(/\s/g, '');
+  if (!nonWs.length) return undefined;
+  const alphaCount = (nonWs.match(/[a-zA-Z]/g) ?? []).length;
+  const alphaRatio = alphaCount / nonWs.length;
+
+  // Average length of whitespace-delimited tokens
+  const words = combined.split(/\s+/).filter(w => w.length > 0);
+  const avgWordLen = words.length ? words.reduce((s, w) => s + w.length, 0) / words.length : 0;
+
+  return alphaRatio < 0.60 || avgWordLen < 3.5;
+}
+
 function getLevelFromXp(totalXp: number): number {
   let level = 1;
   let xpRequired = 100;
@@ -108,8 +141,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_IMPORTS),
         ]);
         if (pr) setProfile(JSON.parse(pr));
-        const savedBooks: Book[] = br ? JSON.parse(br) : [];
-        if (br) setBooks(savedBooks);
+        let savedBooks: Book[] = br ? JSON.parse(br) : [];
+
+        // ── OCR backfill migration ──────────────────────────────────────────
+        // Books imported before the ocrUsed flag was introduced will not have
+        // the field set.  Run a one-time best-effort inference so the "Scanned
+        // PDF" badge is shown correctly after an app restart.
+        let ocrMigrationDirty = false;
+        savedBooks = savedBooks.map(book => {
+          if (book.sourceType === 'pdf' && book.ocrUsed === undefined && book.pages?.length) {
+            const inferred = inferOcrUsed(book.pages);
+            if (inferred !== undefined) {
+              ocrMigrationDirty = true;
+              return { ...book, ocrUsed: inferred };
+            }
+          }
+          return book;
+        });
+        if (ocrMigrationDirty) {
+          // Persist the backfilled flags so inference only runs once per book.
+          AsyncStorage.setItem(STORAGE_KEYS.BOOKS, JSON.stringify(savedBooks)).catch(() => {
+            console.warn('OCR backfill: failed to persist migrated books');
+          });
+        }
+
+        if (br || ocrMigrationDirty) setBooks(savedBooks);
         if (sr) setSessions(JSON.parse(sr));
         if (dr) setDailyActivities(JSON.parse(dr));
 
