@@ -475,6 +475,7 @@ export default function ImportScreen() {
           width: p.width,
           height: p.height,
           text: p.text,
+          lowConfidence: p.lowConfidence,
         }));
         const segments = buildPdfSegments(pages, 3);
         book = {

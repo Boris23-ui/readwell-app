@@ -337,6 +337,14 @@ export default function PdfReader({ book }: { book: Book }) {
                 contentFit="contain"
                 transition={150}
               />
+              {page.lowConfidence && (
+                <View style={styles.lowConfidenceBadge} pointerEvents="none">
+                  <Feather name="alert-triangle" size={12} color="#92400E" />
+                  <Text style={styles.lowConfidenceBadgeText}>
+                    Blurry scan — quiz questions may be limited
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -509,5 +517,24 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: '#92400E',
     lineHeight: 17,
+  },
+  lowConfidenceBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(254, 243, 199, 0.92)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.25)',
+  },
+  lowConfidenceBadgeText: {
+    fontSize: 11,
+    fontFamily: 'Inter_500Medium',
+    color: '#92400E',
   },
 });

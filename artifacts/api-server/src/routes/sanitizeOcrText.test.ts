@@ -10,7 +10,7 @@
  *  - real-world OCR noise fixture: word count and structure within expected bounds
  */
 import { describe, it, expect } from "vitest";
-import { sanitizeOcrText, correctOcrSubstitutions } from "./pdf";
+import { sanitizeOcrText, correctOcrSubstitutions, computePageConfidence } from "./pdf";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -397,5 +397,49 @@ describe("sanitizeOcrText — real-world OCR noise fixture", () => {
     // After sanitisation we expect between 5 and 50 real words.
     expect(wc).toBeGreaterThanOrEqual(5);
     expect(wc).toBeLessThanOrEqual(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computePageConfidence
+// ---------------------------------------------------------------------------
+describe("computePageConfidence", () => {
+  it("returns true (low confidence) for an empty string", () => {
+    expect(computePageConfidence("")).toBe(true);
+  });
+
+  it("returns true (low confidence) for a string with only whitespace and punctuation", () => {
+    expect(computePageConfidence("   ---   ~~~   ")).toBe(true);
+  });
+
+  it("returns true (low confidence) when word count is below the threshold", () => {
+    // 10 real words — well below the threshold of 20
+    const sparse = "the cat sat on the mat and the dog ran";
+    expect(computePageConfidence(sparse)).toBe(true);
+  });
+
+  it("returns true (low confidence) when word count is exactly one below threshold", () => {
+    // Build exactly 19 distinct real words
+    const words = Array.from({ length: 19 }, (_, i) => `word${String(i).padStart(2, "0")}`);
+    expect(computePageConfidence(words.join(" "))).toBe(true);
+  });
+
+  it("returns false (sufficient confidence) when word count meets the threshold", () => {
+    // Build exactly 20 real words (>= 2 letters each) → should NOT be low confidence
+    const words = Array.from({ length: 20 }, (_, i) => `word${String(i).padStart(2, "0")}`);
+    expect(computePageConfidence(words.join(" "))).toBe(false);
+  });
+
+  it("returns false (sufficient confidence) for a normal paragraph of text", () => {
+    const paragraph =
+      "The quick brown fox jumps over the lazy dog near the riverbank on a bright sunny afternoon " +
+      "while the birds sing in the trees and the wind blows gently through the meadow.";
+    expect(computePageConfidence(paragraph)).toBe(false);
+  });
+
+  it("does not count single-character tokens as real words", () => {
+    // Mix of single chars and short noise — none count as ≥2-letter words
+    const noise = "a b c d e f g h i j k l m n o p q r s t";
+    expect(computePageConfidence(noise)).toBe(true);
   });
 });

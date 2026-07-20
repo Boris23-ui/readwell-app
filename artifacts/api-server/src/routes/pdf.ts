@@ -71,6 +71,26 @@ export function sanitizeOcrText(raw: string): string {
 const MAX_PAGES = 150;
 const RENDER_DPI = 150;
 
+/**
+ * Computes a low-confidence flag for a rendered page based on the word count
+ * of its post-sanitisation text.
+ *
+ * Very few real words after sanitisation is a strong signal that the page
+ * image was too blurry for OCR to recover meaningful content, making it
+ * unlikely that the quiz generator can produce useful questions from it.
+ *
+ * Threshold chosen so that a mostly-blank or illegible page (< 20 words)
+ * is flagged while a lightly-scanned page with a paragraph or two is not.
+ */
+const LOW_CONFIDENCE_WORD_THRESHOLD = 20;
+
+export function computePageConfidence(sanitisedText: string): boolean {
+  const wordCount = sanitisedText
+    .split(/\s+/)
+    .filter(w => /[a-z]{2,}/i.test(w)).length;
+  return wordCount < LOW_CONFIDENCE_WORD_THRESHOLD;
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB max
@@ -120,6 +140,8 @@ interface RenderedPage {
   height: number;
   text: string;
   ocrUsed: boolean;
+  /** True when the page has too few recoverable words for reliable quiz generation. */
+  lowConfidence: boolean;
 }
 
 // expiresAt gives clients a hint for when orphaned page images may be
@@ -250,6 +272,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
         height: size.height,
         text,
         ocrUsed: pageOcrUsed,
+        lowConfidence: computePageConfidence(text),
       });
     }
 

@@ -28,6 +28,8 @@ export interface RenderedPdfPage {
   height: number;
   text: string;
   ocrUsed?: boolean;
+  /** True when the page had too few recoverable words for reliable quiz generation. */
+  lowConfidence?: boolean;
 }
 
 export interface RenderPdfResult {

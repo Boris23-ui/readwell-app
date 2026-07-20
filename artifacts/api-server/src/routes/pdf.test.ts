@@ -234,6 +234,21 @@ describe("POST /api/render-pdf — partial-import cleanup", () => {
     // deletePdfPages should only be triggered on failure, never on success
     expect(mockDeletePdfPages).not.toHaveBeenCalled();
   });
+
+  it("includes a boolean lowConfidence field on every page in a successful response", async () => {
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    const res = await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    expect(Array.isArray(res.body.pages)).toBe(true);
+    expect(res.body.pages.length).toBeGreaterThan(0);
+    for (const page of res.body.pages) {
+      expect(typeof page.lowConfidence).toBe("boolean");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
