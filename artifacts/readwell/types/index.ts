@@ -44,6 +44,16 @@ export const BADGE_INFO: Record<BadgeKey, BadgeInfo> = {
   'bookworm': { name: 'Bookworm', description: 'Read 100+ minutes total', icon: 'bookmark', color: '#3B82F6' },
 };
 
+export type BookSourceType = 'text' | 'pdf';
+
+export interface PdfPage {
+  pageNumber: number;
+  imageUrl: string; // normalized "/objects/..." path, served via API base
+  width: number;
+  height: number;
+  text: string;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -55,12 +65,19 @@ export interface Book {
   wordCount: number;
   currentSegmentIndex: number;
   coverColor: string;
+  // Distinguishes the page-image PDF reader from the reflowed text reader.
+  sourceType?: BookSourceType;
+  // Present only for sourceType === 'pdf'.
+  pages?: PdfPage[];
 }
 
 export interface Segment {
   index: number;
   paragraphs: string[];
   quiz?: Quiz;
+  // For PDF books: the inclusive 1-based page range this section covers.
+  pageStart?: number;
+  pageEnd?: number;
 }
 
 export interface Quiz {

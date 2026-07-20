@@ -7,30 +7,165 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
-  Alert,
+  Modal,
+  useWindowDimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Reanimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
-import PdfReader from '@/components/PdfReader';
+import { Book } from '@/types';
+import { resolveStorageUrl } from '@/utils/api';
 
-export default function ReaderScreen() {
-  const { bookId } = useLocalSearchParams<{ bookId: string }>();
+const DEFAULT_ASPECT = 0.7727; // A4 portrait width/height fallback
+
+// ─── Fullscreen pinch/pan zoom overlay ──────────────────────────────────────
+
+function ZoomOverlay({
+  uri,
+  aspect,
+  onClose,
+}: {
+  uri: string;
+  aspect: number;
+  onClose: () => void;
+}) {
+  const { width, height } = useWindowDimensions();
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedX = useSharedValue(0);
+  const savedY = useSharedValue(0);
+
+  const pinch = Gesture.Pinch()
+    .onUpdate(e => {
+      scale.value = Math.max(1, Math.min(savedScale.value * e.scale, 5));
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      if (scale.value <= 1) {
+        translateX.value = withTiming(0);
+        translateY.value = withTiming(0);
+        savedX.value = 0;
+        savedY.value = 0;
+      }
+    });
+
+  const pan = Gesture.Pan()
+    .onUpdate(e => {
+      translateX.value = savedX.value + e.translationX;
+      translateY.value = savedY.value + e.translationY;
+    })
+    .onEnd(() => {
+      savedX.value = translateX.value;
+      savedY.value = translateY.value;
+    });
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1) {
+        scale.value = withTiming(1);
+        savedScale.value = 1;
+        translateX.value = withTiming(0);
+        translateY.value = withTiming(0);
+        savedX.value = 0;
+        savedY.value = 0;
+      } else {
+        scale.value = withTiming(2.5);
+        savedScale.value = 2.5;
+      }
+    });
+
+  const composed = Gesture.Simultaneous(pinch, pan, doubleTap);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  const imgW = width;
+  const imgH = width / aspect;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <GestureHandlerRootView style={styles.overlayRoot}>
+        <View style={styles.overlayBg}>
+          <GestureDetector gesture={composed}>
+            <Reanimated.View style={[{ width, height, justifyContent: 'center' }, animatedStyle]}>
+              <Image
+                source={{ uri }}
+                style={{ width: imgW, height: imgH }}
+                contentFit="contain"
+              />
+            </Reanimated.View>
+          </GestureDetector>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.overlayClose}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Feather name="x" size={26} color="#FFF" />
+          </TouchableOpacity>
+          <View style={styles.overlayHint}>
+            <Text style={styles.overlayHintText}>Pinch or double-tap to zoom</Text>
+          </View>
+        </View>
+      </GestureHandlerRootView>
+    </Modal>
+  );
+}
+
+// ─── PDF Reader Screen ───────────────────────────────────────────────────────
+
+export default function PdfReader({ book }: { book: Book }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, updateBook } = useApp();
-  const book = getBookById(bookId ?? '');
+  const { updateBook } = useApp();
+  const { width } = useWindowDimensions();
 
   const [showFinishCard, setShowFinishCard] = useState(false);
   const [sessionStart] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
+  const [zoomPage, setZoomPage] = useState<{ uri: string; aspect: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const finishAnim = useRef(new Animated.Value(0)).current;
+
+  const segmentIndex = book.currentSegmentIndex;
+  const segment = book.segments[segmentIndex];
+  const totalSegments = book.segments.length;
+  const allPages = book.pages ?? [];
+  const totalPages = allPages.length;
+
+  const sectionPages = segment
+    ? allPages.filter(
+        p =>
+          p.pageNumber >= (segment.pageStart ?? 1) &&
+          p.pageNumber <= (segment.pageEnd ?? totalPages),
+      )
+    : [];
+
+  const [visiblePage, setVisiblePage] = useState(segment?.pageStart ?? 1);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -41,31 +176,14 @@ export default function ReaderScreen() {
     };
   }, [sessionStart]);
 
-  if (!book) {
-    return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.foreground }]}>Book not found.</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={[styles.backLink, { color: colors.primary }]}>Go back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (book.sourceType === 'pdf' && book.pages && book.pages.length > 0) {
-    return <PdfReader book={book} />;
-  }
-
-  const segmentIndex = book.currentSegmentIndex;
-  const segment = book.segments[segmentIndex];
-  const totalSegments = book.segments.length;
-  const progressFraction = totalSegments > 0 ? segmentIndex / totalSegments : 0;
-
   if (!segment) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Text style={[styles.errorText, { color: colors.foreground }]}>You've finished this book!</Text>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}>
+        <TouchableOpacity
+          onPress={() => router.replace('/(tabs)')}
+          style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+        >
           <Text style={styles.primaryBtnText}>Back to Home</Text>
         </TouchableOpacity>
       </View>
@@ -116,21 +234,39 @@ export default function ReaderScreen() {
     }
   };
 
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Estimate which page is at the top of the viewport within this section
+    const y = e.nativeEvent.contentOffset.y;
+    const imgWidth = width - 24;
+    let acc = 0;
+    for (const p of sectionPages) {
+      const aspect = p.width && p.height ? p.width / p.height : DEFAULT_ASPECT;
+      const h = imgWidth / aspect + 12; // + gap
+      if (y < acc + h / 2) {
+        setVisiblePage(p.pageNumber);
+        return;
+      }
+      acc += h;
+    }
+    if (sectionPages.length > 0) {
+      setVisiblePage(sectionPages[sectionPages.length - 1].pageNumber);
+    }
+  };
+
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
+  const imgWidth = width - 24;
+  const progressFraction = totalPages > 0 ? visiblePage / totalPages : 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Fixed header */}
-      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background }]}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Feather name="arrow-left" size={22} color={colors.foreground} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -138,7 +274,7 @@ export default function ReaderScreen() {
             {book.title}
           </Text>
           <Text style={[styles.segmentInfo, { color: colors.mutedForeground }]}>
-            Segment {segmentIndex + 1} of {totalSegments}
+            Page {visiblePage} of {totalPages}
           </Text>
         </View>
         <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
@@ -154,27 +290,42 @@ export default function ReaderScreen() {
         />
       </View>
 
-      {/* Reading content */}
+      {/* Pages */}
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={[styles.content, { paddingBottom: botPad + 120 }]}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={onScroll}
       >
         <View style={[styles.segmentTag, { backgroundColor: `${book.coverColor}15`, borderColor: `${book.coverColor}30` }]}>
           <View style={[styles.segmentDot, { backgroundColor: book.coverColor }]} />
           <Text style={[styles.segmentTagText, { color: book.coverColor }]}>
-            Segment {segmentIndex + 1}  •  {segment.paragraphs.length} paragraph{segment.paragraphs.length !== 1 ? 's' : ''}
+            Section {segmentIndex + 1} of {totalSegments}  •  Pages {segment.pageStart}–{segment.pageEnd}
           </Text>
         </View>
 
-        {segment.paragraphs.map((para, i) => (
-          <Text key={i} style={[styles.paragraph, { color: colors.foreground }]}>
-            {para}
-          </Text>
-        ))}
+        {sectionPages.map(page => {
+          const aspect = page.width && page.height ? page.width / page.height : DEFAULT_ASPECT;
+          const uri = resolveStorageUrl(page.imageUrl);
+          return (
+            <TouchableOpacity
+              key={page.pageNumber}
+              activeOpacity={0.9}
+              onPress={() => setZoomPage({ uri, aspect })}
+              style={styles.pageWrap}
+            >
+              <Image
+                source={{ uri }}
+                style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
+                contentFit="contain"
+                transition={150}
+              />
+            </TouchableOpacity>
+          );
+        })}
 
-        {/* End of segment */}
         {!showFinishCard && (
           <TouchableOpacity
             onPress={showFinish}
@@ -197,12 +348,7 @@ export default function ReaderScreen() {
               borderColor: colors.border,
               paddingBottom: botPad + 16,
               transform: [
-                {
-                  translateY: finishAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [200, 0],
-                  }),
-                },
+                { translateY: finishAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] }) },
               ],
               opacity: finishAnim,
             },
@@ -212,9 +358,7 @@ export default function ReaderScreen() {
           <View style={[styles.quizIconCircle, { backgroundColor: `${book.coverColor}20` }]}>
             <Feather name="help-circle" size={26} color={book.coverColor} />
           </View>
-          <Text style={[styles.quizCardTitle, { color: colors.foreground }]}>
-            Quick check!
-          </Text>
+          <Text style={[styles.quizCardTitle, { color: colors.foreground }]}>Quick check!</Text>
           <Text style={[styles.quizCardSub, { color: colors.mutedForeground }]}>
             5 short questions about what you just read. Earns you XP and builds your comprehension score.
           </Text>
@@ -233,6 +377,10 @@ export default function ReaderScreen() {
           </TouchableOpacity>
         </Animated.View>
       )}
+
+      {zoomPage && (
+        <ZoomOverlay uri={zoomPage.uri} aspect={zoomPage.aspect} onClose={() => setZoomPage(null)} />
+      )}
     </View>
   );
 }
@@ -241,7 +389,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
   errorText: { fontSize: 17, fontFamily: 'Inter_500Medium', textAlign: 'center' },
-  backLink: { fontSize: 15, fontFamily: 'Inter_500Medium' },
   primaryBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8 },
   primaryBtnText: { color: '#FFF', fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   header: {
@@ -250,7 +397,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingBottom: 12,
     gap: 12,
-    borderBottomWidth: 0,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   bookTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', maxWidth: 200, textAlign: 'center' },
@@ -258,26 +404,26 @@ const styles = StyleSheet.create({
   timer: { fontSize: 13, fontFamily: 'Inter_500Medium', minWidth: 42, textAlign: 'right' },
   progressTrack: { height: 3, width: '100%' },
   progressFill: { height: 3 },
-  content: { paddingHorizontal: 22, paddingTop: 24, gap: 0 },
+  content: { paddingHorizontal: 12, paddingTop: 16, gap: 12 },
   segmentTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    marginBottom: 28,
+    marginBottom: 8,
     gap: 6,
   },
   segmentDot: { width: 7, height: 7, borderRadius: 3.5 },
   segmentTagText: { fontSize: 12, fontFamily: 'Inter_500Medium' },
-  paragraph: {
-    fontSize: 17,
-    lineHeight: 30,
-    fontFamily: 'Inter_400Regular',
-    marginBottom: 22,
-    letterSpacing: 0.1,
+  pageWrap: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
   doneBtn: {
     flexDirection: 'row',
@@ -286,7 +432,8 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     paddingVertical: 16,
-    marginTop: 8,
+    marginTop: 12,
+    marginHorizontal: 10,
   },
   doneBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
   quizCard: {
@@ -308,13 +455,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
-  quizCardHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#E5E5E5',
-    marginBottom: 8,
-  },
+  quizCardHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E5E5', marginBottom: 8 },
   quizIconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   quizCardTitle: { fontSize: 20, fontFamily: 'Inter_700Bold' },
   quizCardSub: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
@@ -332,4 +473,9 @@ const styles = StyleSheet.create({
   quizBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
   skipBtn: { paddingVertical: 10 },
   skipBtnText: { fontSize: 14, fontFamily: 'Inter_400Regular' },
+  overlayRoot: { flex: 1 },
+  overlayBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  overlayClose: { position: 'absolute', top: 50, right: 20 },
+  overlayHint: { position: 'absolute', bottom: 50, alignSelf: 'center' },
+  overlayHintText: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontFamily: 'Inter_400Regular' },
 });

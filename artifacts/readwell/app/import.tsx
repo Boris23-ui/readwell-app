@@ -18,8 +18,8 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Book, Segment } from '@/types';
-import { splitIntoParagraphs, groupIntoSegments, countWords, randomCoverColor } from '@/utils/content';
-import { extractTextFromFile } from '@/utils/api';
+import { splitIntoParagraphs, groupIntoSegments, buildPdfSegments, countWords, randomCoverColor } from '@/utils/content';
+import { extractTextFromFile, renderPdf, RenderPdfResult } from '@/utils/api';
 
 // Mobile-only import — resolved at runtime so web bundle is not affected
 let DocumentPicker: typeof import('expo-document-picker') | null = null;
@@ -291,17 +291,18 @@ function MobilePickerButton({
 function FileBadge({
   filename,
   charCount,
+  isPdf,
+  pageCount,
   onClear,
   colors,
 }: {
   filename: string;
   charCount: number;
+  isPdf?: boolean;
+  pageCount?: number;
   onClear: () => void;
   colors: ReturnType<typeof useColors>;
 }) {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-  const isPdf = ext === 'pdf';
-
   return (
     <View style={[styles.fileBadge, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
       <Feather name={isPdf ? 'file-text' : 'file'} size={18} color={colors.primary} />
@@ -310,7 +311,9 @@ function FileBadge({
           {filename}
         </Text>
         <Text style={[styles.fileBadgeMeta, { color: colors.mutedForeground }]}>
-          {(charCount / 1000).toFixed(1)}k characters extracted
+          {isPdf && pageCount
+            ? `${pageCount} page${pageCount !== 1 ? 's' : ''} rendered`
+            : `${(charCount / 1000).toFixed(1)}k characters extracted`}
         </Text>
       </View>
       <TouchableOpacity onPress={onClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -335,18 +338,53 @@ export default function ImportScreen() {
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [sourceFile, setSourceFile] = useState<{ name: string; chars: number } | null>(null);
+  const [pdfData, setPdfData] = useState<RenderPdfResult | null>(null);
+  const [statusMsg, setStatusMsg] = useState('');
 
-  const canProcess = title.trim().length > 0 && content.trim().length > 50;
+  const canProcess =
+    title.trim().length > 0 &&
+    (pdfData ? pdfData.pages.length > 0 : content.trim().length > 50);
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
 
   // ── Shared handler: receives extracted text from any source ──────────────
 
   const applyExtractedText = (text: string, suggestedTitle: string, filename: string) => {
+    setPdfData(null);
     setContent(text);
     if (!title.trim() && suggestedTitle) setTitle(suggestedTitle);
     setSourceFile({ name: filename, chars: text.length });
     setError('');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  // ── PDF: render pages on the server, then build a page-based book ──────────
+
+  const handlePdfFile = async (file: File, filename: string) => {
+    setStatusMsg('Rendering pages…');
+    try {
+      const result = await renderPdf(file);
+      setStatusMsg('');
+      setPdfData(result);
+      // Combined text feeds quiz generation and the word count.
+      const combinedText = result.pages.map(p => p.text).join('\n\n').trim();
+      setContent(combinedText);
+      if (!title.trim() && result.suggestedTitle) setTitle(result.suggestedTitle);
+      setSourceFile({ name: filename, chars: combinedText.length });
+      setError('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      // Page-cap or oversized errors should surface, not silently fall back.
+      const msg = e?.message ?? '';
+      if (/maximum supported|too large|pages/i.test(msg)) {
+        setStatusMsg('');
+        throw e;
+      }
+      // Otherwise fall back to a text-only book so the user is never blocked.
+      setStatusMsg('Rendering failed — importing as text…');
+      const result = await extractTextFromFile(file);
+      applyExtractedText(result.text, result.suggestedTitle, filename);
+      setStatusMsg('');
+    }
   };
 
   // ── Web: file dropped / browsed ──────────────────────────────────────────
@@ -363,9 +401,8 @@ export default function ImportScreen() {
 
     try {
       if (ext === 'pdf') {
-        // PDF → backend
-        const result = await extractTextFromFile(file);
-        applyExtractedText(result.text, result.suggestedTitle, file.name);
+        // PDF → render pages on the server
+        await handlePdfFile(file, file.name);
       } else {
         // Plain text → read directly in browser
         const text = await file.text();
@@ -377,6 +414,7 @@ export default function ImportScreen() {
       setError(e?.message ?? 'Failed to extract text from file.');
     } finally {
       setExtracting(false);
+      setStatusMsg('');
     }
   };
 
@@ -394,8 +432,7 @@ export default function ImportScreen() {
         const fileResponse = await fetch(uri);
         const blob = await fileResponse.blob();
         const file = new File([blob], name, { type: 'application/pdf' });
-        const result = await extractTextFromFile(file);
-        applyExtractedText(result.text, result.suggestedTitle, name);
+        await handlePdfFile(file, name);
       } else {
         // Plain text — read directly
         const textResponse = await fetch(uri);
@@ -407,6 +444,7 @@ export default function ImportScreen() {
       setError(e?.message ?? 'Failed to read file.');
     } finally {
       setExtracting(false);
+      setStatusMsg('');
     }
   };
 
@@ -419,31 +457,61 @@ export default function ImportScreen() {
     setError('');
 
     try {
-      const paragraphs = splitIntoParagraphs(content.trim());
-      if (paragraphs.length < 2) {
-        setError('Not enough content. Please add at least a few paragraphs.');
-        setProcessing(false);
-        return;
+      const bookId = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+      let book: Book;
+
+      if (pdfData) {
+        // Page-based PDF book
+        const pages = pdfData.pages.map(p => ({
+          pageNumber: p.pageNumber,
+          imageUrl: p.imageUrl,
+          width: p.width,
+          height: p.height,
+          text: p.text,
+        }));
+        const segments = buildPdfSegments(pages, 3);
+        book = {
+          id: bookId,
+          title: title.trim(),
+          author: author.trim(),
+          content: content.trim(),
+          segments,
+          status: 'in_progress',
+          createdAt: new Date().toISOString(),
+          wordCount: countWords(content),
+          currentSegmentIndex: 0,
+          coverColor: randomCoverColor(),
+          sourceType: 'pdf',
+          pages,
+        };
+      } else {
+        const paragraphs = splitIntoParagraphs(content.trim());
+        if (paragraphs.length < 2) {
+          setError('Not enough content. Please add at least a few paragraphs.');
+          setProcessing(false);
+          return;
+        }
+
+        const rawSegments = groupIntoSegments(paragraphs, 5);
+        const segments: Segment[] = rawSegments.map((paragraphGroup, i) => ({
+          index: i,
+          paragraphs: paragraphGroup,
+        }));
+
+        book = {
+          id: bookId,
+          title: title.trim(),
+          author: author.trim(),
+          content: content.trim(),
+          segments,
+          status: 'in_progress',
+          createdAt: new Date().toISOString(),
+          wordCount: countWords(content),
+          currentSegmentIndex: 0,
+          coverColor: randomCoverColor(),
+          sourceType: 'text',
+        };
       }
-
-      const rawSegments = groupIntoSegments(paragraphs, 5);
-      const segments: Segment[] = rawSegments.map((paragraphGroup, i) => ({
-        index: i,
-        paragraphs: paragraphGroup,
-      }));
-
-      const book: Book = {
-        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-        title: title.trim(),
-        author: author.trim(),
-        content: content.trim(),
-        segments,
-        status: 'in_progress',
-        createdAt: new Date().toISOString(),
-        wordCount: countWords(content),
-        currentSegmentIndex: 0,
-        coverColor: randomCoverColor(),
-      };
 
       await addBook(book);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -512,14 +580,25 @@ export default function ImportScreen() {
               />
             )}
 
+            {/* Render/upload progress */}
+            {extracting && statusMsg.length > 0 && (
+              <View style={[styles.statusRow, { backgroundColor: `${colors.primary}12` }]}>
+                <ActivityIndicator color={colors.primary} size="small" />
+                <Text style={[styles.statusText, { color: colors.foreground }]}>{statusMsg}</Text>
+              </View>
+            )}
+
             {/* Extracted file badge */}
             {sourceFile && !extracting && (
               <FileBadge
                 filename={sourceFile.name}
                 charCount={sourceFile.chars}
+                isPdf={!!pdfData}
+                pageCount={pdfData?.pageCount}
                 onClear={() => {
                   setSourceFile(null);
                   setContent('');
+                  setPdfData(null);
                 }}
                 colors={colors}
               />
@@ -655,6 +734,15 @@ const styles = StyleSheet.create({
   fileBadgeInfo: { flex: 1 },
   fileBadgeName: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
   fileBadgeMeta: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 2 },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
+  },
+  statusText: { fontSize: 14, fontFamily: 'Inter_500Medium' },
 
   // Divider
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

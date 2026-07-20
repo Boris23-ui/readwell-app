@@ -21,6 +21,44 @@ export async function extractTextFromFile(
   return response.json();
 }
 
+export interface RenderedPdfPage {
+  pageNumber: number;
+  imageUrl: string;
+  width: number;
+  height: number;
+  text: string;
+}
+
+export interface RenderPdfResult {
+  bookId: string;
+  suggestedTitle: string;
+  pageCount: number;
+  pages: RenderedPdfPage[];
+}
+
+export async function renderPdf(file: File): Promise<RenderPdfResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${BASE_URL}/api/render-pdf`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error((err as any).error ?? 'Failed to render PDF');
+  }
+
+  return response.json();
+}
+
+// Resolves a stored object path ("/objects/...") to a fully-qualified URL.
+export function resolveStorageUrl(objectPath: string): string {
+  if (/^https?:\/\//i.test(objectPath)) return objectPath;
+  return `${BASE_URL}/api/storage${objectPath}`;
+}
+
 export async function generateQuiz(
   segmentText: string,
   readingLevel: string,
