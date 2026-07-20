@@ -13,6 +13,30 @@ const execFileAsync = promisify(execFile);
 const router = Router();
 const objectStorage = new ObjectStorageService();
 
+/**
+ * Light post-processing for OCR-sourced text.
+ * Removes common noise without touching normal extracted text.
+ */
+function sanitizeOcrText(raw: string): string {
+  return raw
+    .split('\n')
+    // Remove lines that are a single character (noise glyphs)
+    .filter(line => line.trim().length !== 1)
+    // Remove lines that are entirely non-alphanumeric (e.g. "--- ---" or "| |")
+    .filter(line => line.trim() === '' || /[a-z0-9]/i.test(line))
+    // Collapse runs of 3+ repeated identical characters that are not word chars
+    // (e.g. "~~~~", "====", "....") — keep ellipsis ("...") intact
+    .map(line => line.replace(/([^\w\s])\1{3,}/g, ''))
+    .join('\n')
+    // Collapse 3+ consecutive blank lines into two (paragraph break)
+    .replace(/\n{3,}/g, '\n\n')
+    // Fix broken hyphenation: word-\nnextword → wordnextword
+    .replace(/(\w)-\n(\w)/g, '$1$2')
+    // Collapse excessive internal whitespace (but not newlines)
+    .replace(/[^\S\n]{2,}/g, ' ')
+    .trim();
+}
+
 const MAX_PAGES = 150;
 const RENDER_DPI = 150;
 
@@ -159,7 +183,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
             [imgPath, "stdout", "-l", "eng", "--psm", "1"],
             { maxBuffer: 1024 * 1024 * 8 },
           );
-          const ocrText = ocrOut.replace(/\r/g, "").trim();
+          const ocrText = sanitizeOcrText(ocrOut.replace(/\r/g, "").trim());
           if (ocrText.length > text.length) {
             logger.info({ page: p, chars: ocrText.length }, "OCR text used for page");
             text = ocrText;
