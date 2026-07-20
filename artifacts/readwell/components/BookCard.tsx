@@ -42,11 +42,20 @@ export function BookCard({ book, onPress }: Props) {
           </View>
           <Text style={[styles.pct, { color: colors.mutedForeground }]}>{progress}%</Text>
         </View>
-        {book.status === 'finished' && (
-          <View style={[styles.badge, { backgroundColor: '#22C55E20' }]}>
-            <Text style={[styles.badgeText, { color: '#22C55E' }]}>Finished</Text>
-          </View>
-        )}
+        <View style={styles.tagRow}>
+          {book.sourceType === 'pdf' && book.pages && (
+            <View style={[styles.badge, { backgroundColor: `${book.coverColor}18` }]}>
+              <Text style={[styles.badgeText, { color: book.coverColor }]}>
+                PDF · {book.pages.length} {book.pages.length === 1 ? 'page' : 'pages'}
+              </Text>
+            </View>
+          )}
+          {book.status === 'finished' && (
+            <View style={[styles.badge, { backgroundColor: '#22C55E20' }]}>
+              <Text style={[styles.badgeText, { color: '#22C55E' }]}>Finished</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -111,12 +120,17 @@ const styles = StyleSheet.create({
     width: 30,
     textAlign: 'right',
   },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
+  },
   badge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
-    marginTop: 2,
   },
   badgeText: {
     fontSize: 11,

@@ -32,7 +32,7 @@ export default function QuizScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById } = useApp();
+  const { getBookById, profile } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -59,7 +59,7 @@ export default function QuizScreen() {
 
     // Generate quiz
     const segmentText = segment.paragraphs.join('\n\n');
-    generateQuiz(segmentText, book ? (getBookById(bookId!)?.segments.length ? 'intermediate' : 'intermediate') : 'intermediate')
+    generateQuiz(segmentText, profile.readingLevel ?? 'intermediate')
       .then(data => {
         const q: Quiz = { questions: data.questions };
         setQuiz(q);

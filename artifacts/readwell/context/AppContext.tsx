@@ -55,7 +55,7 @@ interface AppContextType {
   updateBook: (id: string, partial: Partial<Book>) => Promise<void>;
   deleteBook: (id: string) => Promise<void>;
   cacheSegmentQuiz: (bookId: string, segmentIndex: number, quiz: Quiz) => Promise<void>;
-  completeSession: (session: Omit<ReadingSession, 'id'>) => Promise<{ newBadges: BadgeKey[] }>;
+  completeSession: (session: Omit<ReadingSession, 'id'>, opts?: { bookFinished?: boolean; isPerfectQuiz?: boolean }) => Promise<{ newBadges: BadgeKey[] }>;
   getTodayActivity: () => DailyActivity | null;
   getBookById: (id: string) => Book | undefined;
 }
@@ -143,7 +143,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const completeSession = useCallback(async (
-    sessionData: Omit<ReadingSession, 'id'>
+    sessionData: Omit<ReadingSession, 'id'>,
+    opts: { bookFinished?: boolean; isPerfectQuiz?: boolean } = {}
   ): Promise<{ newBadges: BadgeKey[] }> => {
     const session: ReadingSession = {
       ...sessionData,
@@ -199,6 +200,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       newStreak = 1;
     }
 
+    const newTotalBooksFinished = profile.totalBooksFinished + (opts.bookFinished ? 1 : 0);
+
     const newBadges: BadgeKey[] = [];
     const hour = new Date().getHours();
     if (!profile.badges.includes('night-owl') && hour >= 22) newBadges.push('night-owl');
@@ -211,6 +214,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const diff = Math.floor((Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
       if (diff >= 7) newBadges.push('comeback');
     }
+    if (!profile.badges.includes('first-book') && newTotalBooksFinished >= 1) newBadges.push('first-book');
+    if (!profile.badges.includes('perfect-quiz') && opts.isPerfectQuiz) newBadges.push('perfect-quiz');
 
     const updatedProfile: UserProfile = {
       ...profile,
@@ -220,6 +225,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       streakBest: Math.max(profile.streakBest, newStreak),
       lastReadDate: today,
       totalMinutesRead: newTotalMinutes,
+      totalBooksFinished: newTotalBooksFinished,
       badges: [...profile.badges, ...newBadges],
     };
     setProfile(updatedProfile);

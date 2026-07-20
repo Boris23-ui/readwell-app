@@ -78,6 +78,7 @@ export default function SessionSummaryScreen() {
       }
 
       const comprehensionScore = total > 0 ? Math.round((score / Math.max(total - 1, 1)) * 100) : 0;
+      const isPerfectQuiz = !wasSkipped && total > 1 && score === total - 1;
 
       const result = await completeSession({
         bookId: book.id,
@@ -86,7 +87,7 @@ export default function SessionSummaryScreen() {
         segmentsCompleted: 1,
         comprehensionScore,
         xpEarned,
-      });
+      }, { bookFinished: isLastSegment, isPerfectQuiz });
 
       setNewBadges(result.newBadges);
       if (result.newBadges.length > 0 || profile.streakCurrent > 0) {

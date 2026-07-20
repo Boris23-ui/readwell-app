@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 const router = Router();
 const objectStorage = new ObjectStorageService();
 
-const MAX_PAGES = 80;
+const MAX_PAGES = 150;
 const RENDER_DPI = 150;
 
 const upload = multer({

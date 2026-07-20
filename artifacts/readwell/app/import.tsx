@@ -39,12 +39,14 @@ function WebDropZone({
   isDragging,
   setIsDragging,
   isExtracting,
+  extractingLabel = 'Extracting text…',
   colors,
 }: {
   onFile: (file: File) => void;
   isDragging: boolean;
   setIsDragging: (v: boolean) => void;
   isExtracting: boolean;
+  extractingLabel?: string;
   colors: ReturnType<typeof useColors>;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -123,7 +125,7 @@ function WebDropZone({
           </div>
           {/* @ts-ignore */}
           <span style={{ fontSize: 16, fontWeight: '600', color: colors.foreground }}>
-            Extracting text…
+            {extractingLabel}
           </span>
           {/* @ts-ignore */}
           <span style={{ fontSize: 13, color: colors.mutedForeground }}>
@@ -221,10 +223,12 @@ function WebDropZone({
 function MobilePickerButton({
   onFilePicked,
   isExtracting,
+  extractingLabel = 'Extracting text…',
   colors,
 }: {
   onFilePicked: (uri: string, name: string, mimeType: string) => void;
   isExtracting: boolean;
+  extractingLabel?: string;
   colors: ReturnType<typeof useColors>;
 }) {
   const handlePick = async () => {
@@ -263,7 +267,7 @@ function MobilePickerButton({
         <>
           <ActivityIndicator color={colors.primary} />
           <Text style={[styles.mobilePickerText, { color: colors.foreground }]}>
-            Extracting text…
+            {extractingLabel}
           </Text>
         </>
       ) : (
@@ -570,12 +574,14 @@ export default function ImportScreen() {
                 isDragging={isDragging}
                 setIsDragging={setIsDragging}
                 isExtracting={extracting}
+                extractingLabel={statusMsg || 'Extracting text…'}
                 colors={colors}
               />
             ) : (
               <MobilePickerButton
                 onFilePicked={handleMobileFile}
                 isExtracting={extracting}
+                extractingLabel={statusMsg || 'Extracting text…'}
                 colors={colors}
               />
             )}
@@ -605,12 +611,14 @@ export default function ImportScreen() {
             )}
           </View>
 
-          {/* ── Divider ────────────────────────────────────── */}
-          <View style={styles.dividerRow}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or paste text</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
+          {/* ── Divider (hidden once a PDF is loaded — no point pasting text then) */}
+          {!pdfData && (
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or paste text</Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            </View>
+          )}
 
           {/* ── Title ──────────────────────────────────────── */}
           <View style={styles.field}>
@@ -638,32 +646,51 @@ export default function ImportScreen() {
             />
           </View>
 
-          {/* ── Content ────────────────────────────────────── */}
-          <View style={styles.field}>
-            <View style={styles.contentHeader}>
-              <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Content *</Text>
-              {content.length > 0 && (
-                <Text style={[styles.wordCount, { color: colors.mutedForeground }]}>
-                  ~{countWords(content).toLocaleString()} words
-                </Text>
-              )}
+          {/* ── Content (hidden for PDF — the pages carry the content) ── */}
+          {!pdfData && (
+            <View style={styles.field}>
+              <View style={styles.contentHeader}>
+                <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Content *</Text>
+                {content.length > 0 && (
+                  <Text style={[styles.wordCount, { color: colors.mutedForeground }]}>
+                    ~{countWords(content).toLocaleString()} words
+                  </Text>
+                )}
+              </View>
+              <TextInput
+                style={[
+                  styles.contentInput,
+                  { backgroundColor: colors.card, borderColor: sourceFile ? `${colors.primary}50` : colors.border, color: colors.foreground },
+                ]}
+                placeholder="Paste your text here, or import a file above…"
+                placeholderTextColor={colors.mutedForeground}
+                value={content}
+                onChangeText={v => {
+                  setContent(v);
+                  if (sourceFile) setSourceFile(null); // manual edit breaks file link
+                }}
+                multiline
+                textAlignVertical="top"
+              />
             </View>
-            <TextInput
-              style={[
-                styles.contentInput,
-                { backgroundColor: colors.card, borderColor: sourceFile ? `${colors.primary}50` : colors.border, color: colors.foreground },
-              ]}
-              placeholder="Paste your text here, or import a file above…"
-              placeholderTextColor={colors.mutedForeground}
-              value={content}
-              onChangeText={v => {
-                setContent(v);
-                if (sourceFile) setSourceFile(null); // manual edit breaks file link
-              }}
-              multiline
-              textAlignVertical="top"
-            />
-          </View>
+          )}
+
+          {/* ── PDF summary (shown instead of content textarea) ── */}
+          {pdfData && (
+            <View style={[styles.pdfSummary, { backgroundColor: colors.card, borderColor: `${colors.primary}30` }]}>
+              <View style={[styles.pdfSummaryIcon, { backgroundColor: `${colors.primary}15` }]}>
+                <Feather name="file-text" size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.pdfSummaryTitle, { color: colors.foreground }]}>
+                  PDF ready to read
+                </Text>
+                <Text style={[styles.pdfSummaryMeta, { color: colors.mutedForeground }]}>
+                  {pdfData.pageCount} {pdfData.pageCount === 1 ? 'page' : 'pages'} · {Math.ceil(pdfData.pageCount / 3)} {Math.ceil(pdfData.pageCount / 3) === 1 ? 'section' : 'sections'} · ~{countWords(content).toLocaleString()} words
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* ── Error ──────────────────────────────────────── */}
           {error.length > 0 && (
@@ -673,12 +700,12 @@ export default function ImportScreen() {
             </View>
           )}
 
-          {/* ── Segment preview ────────────────────────────── */}
-          {content.trim().length > 50 && (
+          {/* ── Segment preview (text-only books) ────────────────────── */}
+          {!pdfData && content.trim().length > 50 && (
             <View style={[styles.previewBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Feather name="layers" size={14} color={colors.mutedForeground} />
               <Text style={[styles.previewText, { color: colors.mutedForeground }]}>
-                ~{Math.max(1, Math.ceil(splitIntoParagraphs(content).length / 5))} reading segments will be created
+                ~{Math.max(1, Math.ceil(splitIntoParagraphs(content).length / 5))} reading sections will be created
               </Text>
             </View>
           )}
@@ -789,4 +816,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   previewText: { fontSize: 13, fontFamily: 'Inter_400Regular' },
+
+  // PDF summary card (replaces content textarea for PDF imports)
+  pdfSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+  },
+  pdfSummaryIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pdfSummaryTitle: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  pdfSummaryMeta: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
 });

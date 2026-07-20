@@ -132,7 +132,15 @@ export default function HomeScreen() {
                   {latestBook.author || 'Unknown Author'}
                 </Text>
                 <Text style={[styles.continueProgress, { color: colors.mutedForeground }]}>
-                  Segment {latestBook.currentSegmentIndex + 1} of {latestBook.segments.length}
+                  {(() => {
+                    if (latestBook.sourceType === 'pdf' && latestBook.pages) {
+                      const seg = latestBook.segments[latestBook.currentSegmentIndex];
+                      const totalPages = latestBook.pages.length;
+                      const currentPage = seg?.pageStart ?? 1;
+                      return `Page ${currentPage} of ${totalPages}`;
+                    }
+                    return `Section ${latestBook.currentSegmentIndex + 1} of ${latestBook.segments.length}`;
+                  })()}
                 </Text>
               </View>
               <View style={[styles.continueBtn, { backgroundColor: latestBook.coverColor }]}>
@@ -151,7 +159,7 @@ export default function HomeScreen() {
             </View>
             <Text style={[styles.addBookText, { color: colors.foreground }]}>Add your first book</Text>
             <Text style={[styles.addBookSub, { color: colors.mutedForeground }]}>
-              Paste text, an article URL, or any written content
+              Import a PDF or paste text to start reading
             </Text>
           </TouchableOpacity>
         )}

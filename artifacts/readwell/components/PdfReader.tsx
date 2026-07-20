@@ -167,6 +167,12 @@ export default function PdfReader({ book }: { book: Book }) {
 
   const [visiblePage, setVisiblePage] = useState(segment?.pageStart ?? 1);
 
+  // Reset the visible-page indicator whenever the reader advances to a new section.
+  useEffect(() => {
+    setVisiblePage(segment?.pageStart ?? 1);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [segmentIndex]);
+
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - sessionStart) / 1000));
