@@ -121,6 +121,90 @@ describe('inferOcrUsed', () => {
 });
 
 // ---------------------------------------------------------------------------
+// inferOcrUsed — real-world OCR pipeline fixtures
+//
+// The synthetic tests above validate the thresholds in isolation.  The
+// fixtures below use text that is representative of actual output from the
+// app's OCR pipeline (Google Vision / Tesseract) so we can confirm the
+// thresholds work for real documents, not just clean synthetic strings.
+// ---------------------------------------------------------------------------
+
+describe('inferOcrUsed — real-world OCR pipeline fixtures', () => {
+  // ── Native digital PDF ────────────────────────────────────────────────────
+  // Text copied from a machine-readable academic PDF (no scanning involved).
+  // Alpha ratio is near 1.0; average word length is 5–7 characters.
+  // Expected: false (correctly identified as native-digital).
+
+  it('returns false for a native-digital academic PDF (clean extraction, no OCR)', () => {
+    const nativePdfPages = makePages([
+      'Abstract: This paper presents a novel approach to distributed consensus in the presence of Byzantine faults.',
+      'We introduce the concept of randomised agreement protocols, which guarantee termination with high probability.',
+      'Our analysis shows that the proposed algorithm achieves optimal message complexity while maintaining safety.',
+      'The protocol operates in asynchronous networks where processes may fail arbitrarily or send conflicting messages.',
+      'Experimental results on a cluster of one hundred and twenty-eight nodes confirm that our approach scales well in practice.',
+    ]);
+    expect(inferOcrUsed(nativePdfPages)).toBe(false);
+  });
+
+  // ── High-quality scan — Google Vision ─────────────────────────────────────
+  // A clearly-printed modern book scanned at 300 dpi and run through Google
+  // Vision.  Cloud Vision on a clean scan produces near-perfect text, so the
+  // output is visually indistinguishable from a native PDF.  The heuristic
+  // correctly returns false here; this is an expected limitation — the badge
+  // is most useful for identifying noticeably degraded scans, not pristine ones.
+
+  it('returns false for high-quality Google Vision output from a well-scanned book (expected limitation: indistinguishable from native)', () => {
+    const highQualityScanPages = makePages([
+      'The emergence of digital technology has fundamentally transformed how societies organise information.',
+      'Libraries that once occupied physical space in towns and cities have migrated to distributed server farms.',
+      'The transition raises important questions about access, ownership, and the long-term preservation of knowledge.',
+      'Scholars now expect instant retrieval of documents that previously required weeks of interlibrary loan requests.',
+      'Whether this shift represents genuine democratisation of knowledge remains a contested question among researchers.',
+    ]);
+    // High-quality OCR produces alphabetic-ratio ~0.92 and avg word length ~5.5
+    // — both comfortably above the thresholds, so the badge is not shown.
+    expect(inferOcrUsed(highQualityScanPages)).toBe(false);
+  });
+
+  // ── Degraded scan — Tesseract spurious-space artifact ─────────────────────
+  // Tesseract on a low-resolution or noisy scan commonly inserts extra spaces
+  // in the middle of words (e.g. "re sult s" instead of "results").  This is
+  // one of the most frequent real-world artifacts from photocopied documents
+  // scanned at < 200 dpi or documents with speckled backgrounds.  The average
+  // word-length drops well below 3.5, correctly triggering the OCR flag.
+
+  it('returns true for Tesseract output from a degraded photocopy (spurious spaces fragment words)', () => {
+    const degradedScanPages = makePages([
+      'The re sult s sh ow ed th at tem per a ture in cre ased dur ing the fi rst phas e of the ex per i ment .',
+      'Sam ple s w ere col lect ed at in ter val s of 5 m in utes ov er a per iod of 3 h ours .',
+      'The av er age val ues w ere com put ed us ing the meth od de scribed in sect ion 2 and re cord ed bel ow .',
+    ]);
+    // Average word length ≈ 2.3 characters — below the 3.5 threshold.
+    expect(inferOcrUsed(degradedScanPages)).toBe(true);
+  });
+
+  // ── Symbol-heavy scanned document — math textbook ─────────────────────────
+  // A scanned scientific textbook with equations, Greek letters, and data
+  // tables.  Google Vision outputs Unicode mathematical symbols (∑, ∫, π, ²,
+  // ∞) which are non-alphabetic.  Numeric-heavy table rows add further
+  // non-alpha content.  The alphabetic-character ratio falls well below 0.60,
+  // correctly flagging the document as scanned/OCR-processed.
+
+  it('returns true for Google Vision output from a scanned maths textbook (equations and tables dominate)', () => {
+    const mathTextbookPages = makePages([
+      // Inline equations — Greek letters and operators are non-alpha
+      '∑_n=1^∞ 1/n² = π²/6.  ∫_0^∞ e^{−x²} dx = √π/2.  |z| < 1 ⟹ ∑_n z^n = 1/(1−z).',
+      // Mixed prose + formula line
+      'lim_{n→∞} (1 + 1/n)^n = e ≈ 2.71828.  det(A) = ∑_σ sgn(σ) ∏_i a_{i,σ(i)}.',
+      // Data table — numbers and pipe characters dominate
+      '| n | 1/n    | cumsum | error  | Δ      |\n| 1 | 1.000  | 1.000  | 0.6449 | —      |\n| 2 | 0.500  | 1.500  | 0.1449 | 0.500  |\n| 4 | 0.250  | 2.083  | 0.0616 | 0.583  |',
+    ]);
+    // Alphabetic-character ratio ≈ 0.15 — well below the 0.60 threshold.
+    expect(inferOcrUsed(mathTextbookPages)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // applyOcrMigration — unit tests
 // ---------------------------------------------------------------------------
 
