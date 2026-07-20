@@ -27,7 +27,7 @@ const PENDING_PDF_GRACE_MS = 60 * 60 * 1000; // 1 hour
  * Returns `undefined` when there is no page text to analyse (cannot
  * determine one way or the other).
  */
-function inferOcrUsed(pages: { text: string }[]): boolean | undefined {
+export function inferOcrUsed(pages: { text: string }[]): boolean | undefined {
   const sample = pages.slice(0, 10);
   const combined = sample.map(p => p.text ?? '').join(' ').trim();
   if (!combined) return undefined;
@@ -43,6 +43,32 @@ function inferOcrUsed(pages: { text: string }[]): boolean | undefined {
   const avgWordLen = words.length ? words.reduce((s, w) => s + w.length, 0) / words.length : 0;
 
   return alphaRatio < 0.60 || avgWordLen < 3.5;
+}
+
+/**
+ * Apply the OCR backfill migration to a list of books.
+ *
+ * For every PDF book that is missing the `ocrUsed` field, this runs
+ * `inferOcrUsed` on the book's pages and fills in the result.  Books that
+ * already have the field set, are not PDFs, or have no page text are returned
+ * unchanged.
+ *
+ * Returns the updated book list and a `dirty` flag that is `true` when at
+ * least one book was mutated (so the caller knows to persist the changes).
+ */
+export function applyOcrMigration(books: Book[]): { books: Book[]; dirty: boolean } {
+  let dirty = false;
+  const updated = books.map(book => {
+    if (book.sourceType === 'pdf' && book.ocrUsed === undefined && book.pages?.length) {
+      const inferred = inferOcrUsed(book.pages);
+      if (inferred !== undefined) {
+        dirty = true;
+        return { ...book, ocrUsed: inferred };
+      }
+    }
+    return book;
+  });
+  return { books: updated, dirty };
 }
 
 function getLevelFromXp(totalXp: number): number {
@@ -147,17 +173,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Books imported before the ocrUsed flag was introduced will not have
         // the field set.  Run a one-time best-effort inference so the "Scanned
         // PDF" badge is shown correctly after an app restart.
-        let ocrMigrationDirty = false;
-        savedBooks = savedBooks.map(book => {
-          if (book.sourceType === 'pdf' && book.ocrUsed === undefined && book.pages?.length) {
-            const inferred = inferOcrUsed(book.pages);
-            if (inferred !== undefined) {
-              ocrMigrationDirty = true;
-              return { ...book, ocrUsed: inferred };
-            }
-          }
-          return book;
-        });
+        const { books: migratedBooks, dirty: ocrMigrationDirty } = applyOcrMigration(savedBooks);
+        savedBooks = migratedBooks;
         if (ocrMigrationDirty) {
           // Persist the backfilled flags so inference only runs once per book.
           AsyncStorage.setItem(STORAGE_KEYS.BOOKS, JSON.stringify(savedBooks)).catch(() => {
