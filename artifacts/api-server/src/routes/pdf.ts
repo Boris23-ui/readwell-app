@@ -146,6 +146,26 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
         logger.warn({ err: e, page: p }, "Per-page text extraction failed");
       }
 
+      // If the page has little or no text, it is likely a scanned image —
+      // run Tesseract OCR on the rendered JPEG to recover the text.
+      const MIN_TEXT_CHARS = 100;
+      if (text.length < MIN_TEXT_CHARS) {
+        try {
+          const { stdout: ocrOut } = await execFileAsync(
+            "tesseract",
+            [imgPath, "stdout", "-l", "eng", "--psm", "1"],
+            { maxBuffer: 1024 * 1024 * 8 },
+          );
+          const ocrText = ocrOut.replace(/\r/g, "").trim();
+          if (ocrText.length > text.length) {
+            logger.info({ page: p, chars: ocrText.length }, "OCR text used for page");
+            text = ocrText;
+          }
+        } catch (e) {
+          logger.warn({ err: e, page: p }, "OCR fallback failed");
+        }
+      }
+
       const objectPath = await objectStorage.uploadBuffer(
         `pdf-pages/${bookId}/${padded}.jpg`,
         imgBuffer,
