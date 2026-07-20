@@ -71,6 +71,21 @@ export function sanitizeOcrText(raw: string): string {
 const MAX_PAGES = 150;
 const RENDER_DPI = 150;
 
+// How often the orphaned-page cleanup may run, in milliseconds.
+// Defaults to 10 minutes; override with ORPHAN_CLEANUP_INTERVAL_MS env var.
+const ORPHAN_CLEANUP_INTERVAL_MS = process.env.ORPHAN_CLEANUP_INTERVAL_MS
+  ? parseInt(process.env.ORPHAN_CLEANUP_INTERVAL_MS, 10)
+  : 10 * 60 * 1000; // 10 minutes
+
+// Timestamp of the last time the orphan cleanup was fired on this server instance.
+// Uses -Infinity so the first request always triggers a cleanup.
+let lastOrphanCleanupAt = -Infinity;
+
+/** Resets the orphan-cleanup rate-limit gate. Exported for use in tests only. */
+export function resetOrphanCleanupTimestamp(): void {
+  lastOrphanCleanupAt = -Infinity;
+}
+
 /**
  * Computes a low-confidence flag for a rendered page based on the word count
  * of its post-sanitisation text.
@@ -150,11 +165,16 @@ interface RenderedPage {
 const PDF_PAGES_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 router.post("/render-pdf", upload.single("file"), async (req, res) => {
-  // Fire-and-forget: lazily clean up any orphaned pdf-pages folders older
-  // than the TTL. This runs asynchronously so it never delays the response.
-  objectStorage.deleteOrphanedPdfPageFolders(PDF_PAGES_TTL_MS).catch((err) => {
-    logger.warn({ err }, "Orphaned PDF pages cleanup failed");
-  });
+  // Fire-and-forget: lazily clean up orphaned pdf-pages folders older than
+  // the TTL. Rate-limited to at most once per ORPHAN_CLEANUP_INTERVAL_MS so
+  // that concurrent imports don't hammer storage with simultaneous scans.
+  const now = Date.now();
+  if (now - lastOrphanCleanupAt >= ORPHAN_CLEANUP_INTERVAL_MS) {
+    lastOrphanCleanupAt = now;
+    objectStorage.deleteOrphanedPdfPageFolders(PDF_PAGES_TTL_MS).catch((err) => {
+      logger.warn({ err }, "Orphaned PDF pages cleanup failed");
+    });
+  }
 
   if (!req.file) {
     res.status(400).json({ error: "No file uploaded" });

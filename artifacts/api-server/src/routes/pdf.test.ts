@@ -12,7 +12,7 @@
  * Covers POST /api/render-pdf — partial-import cleanup:
  *  - when uploadBuffer throws after uploading some pages, deletePdfPages is
  *    called for that bookId so no files are stranded in storage
- *  - deleteOrphanedPdfPageFolders is invoked on every render-pdf request
+ *  - deleteOrphanedPdfPageFolders is rate-limited (at most once per interval)
  *  - failures in deleteOrphanedPdfPageFolders never block or fail the response
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -99,6 +99,7 @@ vi.mock("fs", async (importOriginal) => {
 // Import the Express app AFTER the mocks are registered
 // ---------------------------------------------------------------------------
 import app from "../app";
+import { resetOrphanCleanupTimestamp } from "./pdf";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -252,16 +253,19 @@ describe("POST /api/render-pdf — partial-import cleanup", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests — POST /api/render-pdf — server-side orphan cleanup
+// Tests — POST /api/render-pdf — server-side orphan cleanup (rate-limited)
 // ---------------------------------------------------------------------------
 describe("POST /api/render-pdf — server-side orphan cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.restoreAllMocks();
+    // Reset the rate-limit gate so each test starts fresh
+    resetOrphanCleanupTimestamp();
     mockDeletePdfPages.mockResolvedValue(undefined);
     mockDeleteOrphanedPdfPageFolders.mockResolvedValue(undefined);
   });
 
-  it("invokes deleteOrphanedPdfPageFolders on every render-pdf request", async () => {
+  it("invokes deleteOrphanedPdfPageFolders on the first render-pdf request", async () => {
     mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
 
     await request(app)
@@ -274,6 +278,63 @@ describe("POST /api/render-pdf — server-side orphan cleanup", () => {
     const [ttlMs] = mockDeleteOrphanedPdfPageFolders.mock.calls[0];
     expect(typeof ttlMs).toBe("number");
     expect(ttlMs).toBeGreaterThan(0);
+  });
+
+  it("does not invoke deleteOrphanedPdfPageFolders again on a second request within the interval", async () => {
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    // First request — fires cleanup and records the timestamp
+    await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    vi.clearAllMocks();
+    mockDeletePdfPages.mockResolvedValue(undefined);
+    mockDeleteOrphanedPdfPageFolders.mockResolvedValue(undefined);
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    // Second request immediately after — must not fire cleanup again
+    await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    expect(mockDeleteOrphanedPdfPageFolders).not.toHaveBeenCalled();
+  });
+
+  it("invokes deleteOrphanedPdfPageFolders again after the interval has elapsed", async () => {
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    const BASE_TIME = 1_000_000_000_000;
+    const INTERVAL_MS = process.env.ORPHAN_CLEANUP_INTERVAL_MS
+      ? parseInt(process.env.ORPHAN_CLEANUP_INTERVAL_MS, 10)
+      : 10 * 60 * 1000;
+
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(BASE_TIME);
+
+    // First request — fires cleanup at BASE_TIME
+    await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    expect(mockDeleteOrphanedPdfPageFolders).toHaveBeenCalledOnce();
+    vi.clearAllMocks();
+    mockDeletePdfPages.mockResolvedValue(undefined);
+    mockDeleteOrphanedPdfPageFolders.mockResolvedValue(undefined);
+    mockUploadBuffer.mockResolvedValue("/objects/pdf-pages/some-id/001.jpg");
+
+    // Advance time past the interval
+    dateSpy.mockReturnValue(BASE_TIME + INTERVAL_MS);
+
+    // Third request — must fire cleanup again
+    await request(app)
+      .post("/api/render-pdf")
+      .attach("file", FAKE_PDF, { filename: "test.pdf", contentType: "application/pdf" })
+      .expect(200);
+
+    expect(mockDeleteOrphanedPdfPageFolders).toHaveBeenCalledOnce();
   });
 
   it("does not fail the response when deleteOrphanedPdfPageFolders rejects", async () => {
