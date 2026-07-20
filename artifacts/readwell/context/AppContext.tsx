@@ -73,6 +73,12 @@ const STORAGE_KEYS = {
   SESSIONS: '@readwell/sessions',
   DAILY: '@readwell/daily',
   PENDING_PDF_IMPORTS: '@readwell/pending-pdf-imports',
+  /**
+   * Persistent queue of server-side bookIds whose PDF page images still need
+   * to be deleted. Entries are added before the book is removed locally so
+   * that a failed or offline deletion can be retried on the next app launch.
+   */
+  PENDING_PDF_DELETIONS: '@readwell/pending-pdf-deletions',
 };
 
 const DEFAULT_PROFILE: UserProfile = {
@@ -169,6 +175,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (sr) setSessions(JSON.parse(sr));
         if (dr) setDailyActivities(JSON.parse(dr));
 
+        // ── Pending deletion retry ─────────────────────────────────────────
+        // If deletePdfPages failed (e.g. device was offline) when the user
+        // deleted a book, the serverBookId was left in PENDING_PDF_DELETIONS.
+        // On every launch we retry those deletions and remove the ones that
+        // succeed.
+        const deletionsRaw = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS);
+        if (deletionsRaw) {
+          const pendingDeletions: string[] = JSON.parse(deletionsRaw);
+          if (pendingDeletions.length > 0) {
+            const results = await Promise.allSettled(
+              pendingDeletions.map(bookId => deletePdfPages(bookId)),
+            );
+            const stillFailing = pendingDeletions.filter((_, i) => results[i].status === 'rejected');
+            await AsyncStorage.setItem(
+              STORAGE_KEYS.PENDING_PDF_DELETIONS,
+              JSON.stringify(stillFailing),
+            );
+          }
+        }
+
         // ── Orphan cleanup ─────────────────────────────────────────────────
         // If the app was force-closed after renderPdf returned but before the
         // book was saved, page images sit in storage forever. On every launch
@@ -252,21 +278,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteBook = useCallback(async (id: string) => {
     // For PDF books, find the server-side bookId from the first page image URL
     // (format: /objects/pdf-pages/<server-bookId>/<page>.jpg) and delete the images.
+
+    // Capture the current books synchronously so we can read the serverBookId.
     setBooks(prev => {
       const book = prev.find(b => b.id === id);
-      if (book?.sourceType === 'pdf' && book.pages && book.pages.length > 0) {
-        const imageUrl = book.pages[0].imageUrl;
-        // Extract <server-bookId> from "/objects/pdf-pages/<server-bookId>/..."
-        const match = imageUrl.match(/\/objects\/pdf-pages\/([^/]+)\//);
-        if (match) {
-          deletePdfPages(match[1]).catch(() => {
-            // Best-effort — log but don't block the deletion
-            console.warn('Failed to delete PDF page images for book', id);
-          });
-        }
-      }
       const updated = prev.filter(b => b.id !== id);
       AsyncStorage.setItem(STORAGE_KEYS.BOOKS, JSON.stringify(updated));
+
+      if (book?.sourceType === 'pdf' && book.pages && book.pages.length > 0) {
+        const imageUrl = book.pages[0].imageUrl;
+        const match = imageUrl.match(/\/objects\/pdf-pages\/([^/]+)\//);
+        if (match) {
+          const serverBookId = match[1];
+          // Enqueue the deletion before attempting it. This way, if the
+          // network call fails (e.g. device is offline), the entry stays in
+          // the queue and is retried on the next app launch.
+          AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS)
+            .then(raw => {
+              const queue: string[] = raw ? JSON.parse(raw) : [];
+              if (!queue.includes(serverBookId)) {
+                queue.push(serverBookId);
+              }
+              return AsyncStorage.setItem(
+                STORAGE_KEYS.PENDING_PDF_DELETIONS,
+                JSON.stringify(queue),
+              );
+            })
+            .then(() => deletePdfPages(serverBookId))
+            .then(() => {
+              // Deletion succeeded — remove from the queue.
+              AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS)
+                .then(raw => {
+                  const queue: string[] = raw ? JSON.parse(raw) : [];
+                  const trimmed = queue.filter(bid => bid !== serverBookId);
+                  return AsyncStorage.setItem(
+                    STORAGE_KEYS.PENDING_PDF_DELETIONS,
+                    JSON.stringify(trimmed),
+                  );
+                })
+                .catch(() => {});
+            })
+            .catch(() => {
+              // Deletion failed (offline or server error). The serverBookId
+              // remains in PENDING_PDF_DELETIONS and will be retried on the
+              // next app launch.
+              console.warn(
+                'deleteBook: PDF page deletion failed; will retry on next launch for bookId',
+                serverBookId,
+              );
+            });
+        }
+      }
+
       return updated;
     });
   }, []);

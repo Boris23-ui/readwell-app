@@ -63,17 +63,19 @@ export function resolveStorageUrl(objectPath: string): string {
   return `${BASE_URL}/api/storage${objectPath}`;
 }
 
-// Deletes rendered page images for a PDF book from storage (best-effort; logs on failure).
+/**
+ * Delete all rendered page images for a PDF book from storage.
+ *
+ * Throws on network errors or non-2xx responses so that callers that manage a
+ * persistent retry queue can detect failure.  Callers that want fire-and-forget
+ * behaviour should catch the rejection themselves.
+ */
 export async function deletePdfPages(bookId: string): Promise<void> {
-  try {
-    const res = await fetch(`${BASE_URL}/api/pdf/pages/${encodeURIComponent(bookId)}`, {
-      method: 'DELETE',
-    });
-    if (!res.ok) {
-      console.warn(`deletePdfPages: server returned ${res.status} for bookId ${bookId}`);
-    }
-  } catch (e) {
-    console.warn('deletePdfPages: network error', e);
+  const res = await fetch(`${BASE_URL}/api/pdf/pages/${encodeURIComponent(bookId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    throw new Error(`deletePdfPages: server returned ${res.status} for bookId ${bookId}`);
   }
 }
 
