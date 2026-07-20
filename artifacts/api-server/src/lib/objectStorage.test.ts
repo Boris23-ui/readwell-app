@@ -120,3 +120,129 @@ describe("ObjectStorageService.deletePdfPages", () => {
     expect(f.delete).toHaveBeenCalledWith({ ignoreNotFound: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// deleteOrphanedPdfPageFolders
+// ---------------------------------------------------------------------------
+
+const BOOK_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const BOOK_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+const TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+/** Creates a fake GCS file object with a metadata.timeCreated field. */
+function makeTimedFile(name: string, timeCreated: Date) {
+  return {
+    name,
+    metadata: { timeCreated: timeCreated.toISOString() },
+    delete: mockDelete,
+  };
+}
+
+describe("ObjectStorageService.deleteOrphanedPdfPageFolders", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDelete.mockResolvedValue(undefined);
+  });
+
+  it("deletes a folder whose newest file is older than the TTL", async () => {
+    const oldTime = new Date(Date.now() - TTL_MS - 10_000); // just past the cutoff
+    const f = makeTimedFile(`private/pdf-pages/${BOOK_A}/001.jpg`, oldTime);
+
+    // First call: list all pdf-pages/ files
+    // Second call (via deletePdfPages): list files under BOOK_A's prefix
+    mockGetFiles
+      .mockResolvedValueOnce([[f]])
+      .mockResolvedValueOnce([[f]]);
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    expect(mockDelete).toHaveBeenCalledOnce();
+    expect(mockDelete).toHaveBeenCalledWith({ ignoreNotFound: true });
+  });
+
+  it("leaves a folder whose newest file is within the TTL intact", async () => {
+    const recentTime = new Date(Date.now() - TTL_MS + 30_000); // safely within TTL
+    const f = makeTimedFile(`private/pdf-pages/${BOOK_A}/001.jpg`, recentTime);
+
+    mockGetFiles.mockResolvedValueOnce([[f]]);
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    // Only the initial listing call should have been made — no deletions
+    expect(mockGetFiles).toHaveBeenCalledOnce();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("deletes old folders and leaves recent ones intact when both are present", async () => {
+    const now = Date.now();
+    const oldTime = new Date(now - TTL_MS - 60_000);
+    const recentTime = new Date(now - 5_000);
+
+    const oldFile = makeTimedFile(`private/pdf-pages/${BOOK_A}/001.jpg`, oldTime);
+    const recentFile = makeTimedFile(`private/pdf-pages/${BOOK_B}/001.jpg`, recentTime);
+
+    // List all → then deletePdfPages for BOOK_A only (Map inserts BOOK_A first)
+    mockGetFiles
+      .mockResolvedValueOnce([[oldFile, recentFile]])
+      .mockResolvedValueOnce([[oldFile]]);
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    // Only the old folder's file is deleted
+    expect(mockDelete).toHaveBeenCalledOnce();
+  });
+
+  it("uses the most recent file's timestamp to decide — keeps a folder with any recent file", async () => {
+    const now = Date.now();
+    const oldFile = makeTimedFile(
+      `private/pdf-pages/${BOOK_A}/001.jpg`,
+      new Date(now - TTL_MS - 60_000),
+    );
+    const recentFile = makeTimedFile(
+      `private/pdf-pages/${BOOK_A}/002.jpg`,
+      new Date(now - 5_000),
+    );
+
+    // Both files belong to the same book; the newer file makes the folder active
+    mockGetFiles.mockResolvedValueOnce([[oldFile, recentFile]]);
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    // Folder should NOT be deleted because its newest file is within TTL
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("swallows a per-folder error so sibling folders are still deleted", async () => {
+    const oldTime = new Date(Date.now() - TTL_MS - 60_000);
+    const fileA = makeTimedFile(`private/pdf-pages/${BOOK_A}/001.jpg`, oldTime);
+    const fileB = makeTimedFile(`private/pdf-pages/${BOOK_B}/001.jpg`, oldTime);
+
+    // List all folders (BOOK_A is inserted into the Map first)
+    mockGetFiles.mockResolvedValueOnce([[fileA, fileB]]);
+    // deletePdfPages for BOOK_A: getFiles throws
+    mockGetFiles.mockRejectedValueOnce(new Error("GCS unavailable"));
+    // deletePdfPages for BOOK_B: succeeds and returns a deletable file
+    mockGetFiles.mockResolvedValueOnce([[fileB]]);
+
+    const svc = makeService();
+    // Must resolve (not throw) even though one folder's deletion fails
+    await expect(svc.deleteOrphanedPdfPageFolders(TTL_MS)).resolves.toBeUndefined();
+
+    // BOOK_B's file must still be deleted despite BOOK_A's failure
+    expect(mockDelete).toHaveBeenCalledOnce();
+  });
+
+  it("does nothing when there are no files under pdf-pages/", async () => {
+    mockGetFiles.mockResolvedValueOnce([[]]); // empty listing
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    expect(mockGetFiles).toHaveBeenCalledOnce();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+});
