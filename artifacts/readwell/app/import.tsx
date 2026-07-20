@@ -332,7 +332,7 @@ function FileBadge({
 export default function ImportScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addBook } = useApp();
+  const { addBook, registerPendingPdfImport, clearPendingPdfImport } = useApp();
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -368,6 +368,9 @@ export default function ImportScreen() {
     try {
       const result = await renderPdf(file);
       setStatusMsg('');
+      // Track this render so orphaned page images can be cleaned up if the
+      // app is killed before the book is saved.
+      registerPendingPdfImport(result.bookId).catch(() => {});
       setPdfData(result);
       // Combined text feeds quiz generation and the word count.
       const combinedText = result.pages.map(p => p.text).join('\n\n').trim();
@@ -519,6 +522,10 @@ export default function ImportScreen() {
       }
 
       await addBook(book);
+      // Book is now persisted — remove it from the orphan-cleanup watchlist.
+      if (pdfData) {
+        clearPendingPdfImport(pdfData.bookId).catch(() => {});
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/reader/${book.id}`);
     } catch (e) {
@@ -540,6 +547,7 @@ export default function ImportScreen() {
               // Clean up any rendered-but-unsaved PDF pages before leaving
               if (pdfData) {
                 deletePdfPages(pdfData.bookId).catch(() => {});
+                clearPendingPdfImport(pdfData.bookId).catch(() => {});
               }
               router.back();
             }}
@@ -615,6 +623,7 @@ export default function ImportScreen() {
                   // Clean up rendered page images that were never saved as a book
                   if (pdfData) {
                     deletePdfPages(pdfData.bookId).catch(() => {});
+                    clearPendingPdfImport(pdfData.bookId).catch(() => {});
                   }
                   setSourceFile(null);
                   setContent('');

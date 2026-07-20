@@ -214,7 +214,13 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
     const rawName = originalname.replace(/\.[^.]+$/, "");
     const suggestedTitle = rawName.replace(/[-_]/g, " ").replace(/\s{2,}/g, " ").trim();
 
-    res.json({ bookId, suggestedTitle, pageCount, pages, ocrUsed: anyOcrUsed });
+    // expiresAt gives clients a hint for when orphaned page images may be
+    // lazily cleaned up (2 h after upload). Pages should be promoted to a
+    // saved book before this time, or explicitly deleted by the client.
+    const PDF_PAGES_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+    const expiresAt = new Date(Date.now() + PDF_PAGES_TTL_MS).toISOString();
+
+    res.json({ bookId, suggestedTitle, pageCount, pages, ocrUsed: anyOcrUsed, expiresAt });
   } catch (err) {
     logger.error({ err, filename: originalname }, "PDF render failed");
     res.status(500).json({ error: "Failed to render PDF pages." });

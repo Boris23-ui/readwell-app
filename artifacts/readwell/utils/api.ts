@@ -36,6 +36,8 @@ export interface RenderPdfResult {
   pageCount: number;
   pages: RenderedPdfPage[];
   ocrUsed?: boolean;
+  /** ISO timestamp after which the server may clean up orphaned page images. */
+  expiresAt?: string;
 }
 
 export async function renderPdf(file: File): Promise<RenderPdfResult> {
