@@ -2,14 +2,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile, Book, ReadingSession, DailyActivity, BadgeKey, Segment, Quiz } from '@/types';
 import { deletePdfPages } from '@/utils/api';
-
-/** A record of a PDF render that has not yet been promoted to a saved book. */
-interface PendingPdfImport {
-  /** The server-side bookId used in storage paths (pdf-pages/<bookId>/). */
-  serverBookId: string;
-  /** ISO timestamp of when the render completed (used to apply a grace period). */
-  registeredAt: string;
-}
+import { runOrphanCleanup } from './orphanCleanup';
+import type { PendingPdfImport } from './orphanCleanup';
 
 /**
  * How old a pending import must be before we consider it orphaned and safe to
@@ -202,34 +196,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // and (b) not present in any saved book, then delete their images.
         if (pendingRaw) {
           const pending: PendingPdfImport[] = JSON.parse(pendingRaw);
-          const now = Date.now();
-
-          // Collect every server bookId that made it into a saved book
-          const savedServerBookIds = new Set<string>();
-          for (const book of savedBooks) {
-            if (book.sourceType === 'pdf' && book.pages && book.pages.length > 0) {
-              const match = book.pages[0].imageUrl.match(/\/objects\/pdf-pages\/([^/]+)\//);
-              if (match) savedServerBookIds.add(match[1]);
-            }
-          }
-
-          const stillPending: PendingPdfImport[] = [];
-          for (const entry of pending) {
-            const age = now - new Date(entry.registeredAt).getTime();
-            if (savedServerBookIds.has(entry.serverBookId)) {
-              // Already saved — drop it silently (no storage deletion needed)
-              continue;
-            }
-            if (age < PENDING_PDF_GRACE_MS) {
-              // Too recent — might still be in-progress on this device; keep it
-              stillPending.push(entry);
-              continue;
-            }
-            // Orphaned — delete the page images (best-effort)
-            deletePdfPages(entry.serverBookId).catch(() => {
-              console.warn('Orphan cleanup: failed to delete pages for', entry.serverBookId);
-            });
-          }
+          const { stillPending } = await runOrphanCleanup(
+            pending,
+            savedBooks,
+            Date.now(),
+            (bookId) =>
+              deletePdfPages(bookId).catch(() => {
+                console.warn('Orphan cleanup: failed to delete pages for', bookId);
+              }),
+          );
 
           // Persist the trimmed list (remove resolved/cleaned entries)
           await AsyncStorage.setItem(
