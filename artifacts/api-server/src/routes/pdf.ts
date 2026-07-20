@@ -17,7 +17,7 @@ const objectStorage = new ObjectStorageService();
  * Light post-processing for OCR-sourced text.
  * Removes common noise without touching normal extracted text.
  */
-function sanitizeOcrText(raw: string): string {
+export function sanitizeOcrText(raw: string): string {
   return raw
     .split('\n')
     // Remove lines that are a single character (noise glyphs)
