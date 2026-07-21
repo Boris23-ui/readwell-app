@@ -12,3 +12,9 @@ id = "2Go8ofvzyVA6d6WEF6kCj"
 uri = "file://artifacts/readwell/assets/images/splash-icon.png"
 type = "image"
 title = "Einstein B&W splash logo"
+
+[[outputs]]
+id = "DhQWtQEo1mwvTasxsOkYt"
+uri = "file://screenshots/readwell-preview.jpg"
+type = "image"
+title = "ReadWell app preview"
