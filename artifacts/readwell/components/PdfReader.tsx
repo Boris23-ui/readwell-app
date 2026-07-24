@@ -147,6 +147,7 @@ export default function PdfReader({ book }: { book: Book }) {
   const [sessionStart] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const [zoomPage, setZoomPage] = useState<{ uri: string; aspect: number } | null>(null);
+  const [failedPages, setFailedPages] = useState<Set<number>>(new Set());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const finishAnim = useRef(new Animated.Value(0)).current;
@@ -259,6 +260,11 @@ export default function PdfReader({ book }: { book: Book }) {
     }
   };
 
+  const onImageError = (pageNumber: number, error: any) => {
+    console.error(`PDF page ${pageNumber} failed to load`, error);
+    setFailedPages(prev => new Set(prev).add(pageNumber));
+  };
+
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -336,7 +342,14 @@ export default function PdfReader({ book }: { book: Book }) {
                 style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
                 contentFit="contain"
                 transition={150}
+                onError={(e) => onImageError(page.pageNumber, e)}
               />
+              {failedPages.has(page.pageNumber) && (
+                <View style={styles.imageErrorOverlay} pointerEvents="none">
+                  <Feather name="image" size={20} color="#EF4444" />
+                  <Text style={styles.imageErrorText}>Could not load page</Text>
+                </View>
+              )}
               {page.lowConfidence && (
                 <View style={styles.lowConfidenceBadge} pointerEvents="none">
                   <Feather name="alert-triangle" size={12} color="#92400E" />
@@ -447,6 +460,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 3,
+    position: 'relative',
   },
   doneBtn: {
     flexDirection: 'row',
@@ -536,5 +550,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Inter_500Medium',
     color: '#92400E',
+  },
+  imageErrorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderRadius: 6,
+    gap: 6,
+  },
+  imageErrorText: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    color: '#EF4444',
   },
 });

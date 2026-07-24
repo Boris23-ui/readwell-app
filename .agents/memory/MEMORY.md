@@ -1,2 +1,3 @@
-- [Metro _tmp_ blocklist](metro-tmp-blocklist.md) — pnpm packages that create _tmp_ dirs crash Metro; block `/node_modules[/\\][^/\\]*_tmp_\d+/` in metro.config.js resolver.blockList
+- [Metro _tmp_ blocklist](metro-tmp-blocklist.md) — pnpm packages that create _tmp_ dirs crash Metro; block `/node_modules[/\][^/\]*_tmp_\d+/` in metro.config.js resolver.blockList
 - [PDF Reader Architecture](pdf-reader-architecture.md) — how PDF page-image rendering, storage, and reading are implemented end-to-end
+- [Mobile API and file upload gotchas](mobile-api-and-file-upload.md) — use the Expo dev domain for API calls and {uri,name,type} objects for mobile uploads

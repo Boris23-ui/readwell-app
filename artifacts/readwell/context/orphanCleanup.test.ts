@@ -30,11 +30,11 @@ function makePdfBook(serverBookId: string): SavedBook {
 // ---------------------------------------------------------------------------
 
 describe('runOrphanCleanup', () => {
-  let deletePdfPagesMock: ReturnType<typeof vi.fn>;
+  let deletePdfPagesMock: ReturnType<typeof vi.fn<(bookId: string) => Promise<void>>>;
   const NOW = Date.now();
 
   beforeEach(() => {
-    deletePdfPagesMock = vi.fn().mockResolvedValue(undefined);
+    deletePdfPagesMock = vi.fn<(bookId: string) => Promise<void>>().mockResolvedValue(undefined);
   });
 
   // ── Case (a): old orphan ──────────────────────────────────────────────────

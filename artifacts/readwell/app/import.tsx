@@ -19,7 +19,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Book, Segment } from '@/types';
 import { splitIntoParagraphs, groupIntoSegments, buildPdfSegments, countWords, randomCoverColor } from '@/utils/content';
-import { extractTextFromFile, renderPdf, RenderPdfResult, deletePdfPages } from '@/utils/api';
+import { extractTextFromFile, renderPdf, RenderPdfResult, deletePdfPages, type UploadFile } from '@/utils/api';
 
 // Mobile-only import — resolved at runtime so web bundle is not affected
 let DocumentPicker: typeof import('expo-document-picker') | null = null;
@@ -29,7 +29,7 @@ if (Platform.OS !== 'web') {
   } catch {}
 }
 
-const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown'];
+const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown', '.html', '.htm'];
 const ACCEPTED_MIME = 'application/pdf,text/plain,text/markdown,text/html';
 
 // ─── File Drop Zone (web-only inner component) ───────────────────────────────
@@ -236,7 +236,7 @@ function MobilePickerButton({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'text/plain', 'text/markdown'],
+        type: ['application/pdf', 'text/plain', 'text/markdown', 'text/html'],
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -363,7 +363,7 @@ export default function ImportScreen() {
 
   // ── PDF: render pages on the server, then build a page-based book ──────────
 
-  const handlePdfFile = async (file: File, filename: string) => {
+  const handlePdfFile = async (file: UploadFile, filename: string) => {
     setStatusMsg('Rendering pages…');
     try {
       const result = await renderPdf(file);
@@ -434,18 +434,12 @@ export default function ImportScreen() {
     setError('');
 
     try {
+      const mobileFile: UploadFile = { uri, name, type: mimeType };
       if (mimeType === 'application/pdf' || ext === 'pdf') {
-        // Fetch the local file and send to backend as a Blob
-        const fileResponse = await fetch(uri);
-        const blob = await fileResponse.blob();
-        const file = new File([blob], name, { type: 'application/pdf' });
-        await handlePdfFile(file, name);
+        await handlePdfFile(mobileFile, name);
       } else {
-        // Plain text — read directly
-        const textResponse = await fetch(uri);
-        const text = await textResponse.text();
-        const rawName = name.replace(/\.[^.]+$/, '');
-        applyExtractedText(text, rawName.replace(/[-_]/g, ' ').trim(), name);
+        const result = await extractTextFromFile(mobileFile);
+        applyExtractedText(result.text, result.suggestedTitle, name);
       }
     } catch (e: any) {
       setError(e?.message ?? 'Failed to read file.');

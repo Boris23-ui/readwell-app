@@ -1,12 +1,31 @@
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : '';
+export type UploadFile = File | { uri: string; name: string; type: string };
+
+function appendFile(formData: FormData, fieldName: string, file: UploadFile) {
+  if ('uri' in file) {
+    // React Native file upload: FormData expects { uri, name, type }
+    formData.append(fieldName, file as any);
+  } else {
+    formData.append(fieldName, file);
+  }
+}
+
+const BASE_URL = (() => {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}`;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  throw new Error(
+    'EXPO_PUBLIC_DOMAIN is not set. The app cannot reach the ReadWell server. ' +
+      'Make sure the dev script includes EXPO_PUBLIC_DOMAIN=$REPLIT_EXPO_DEV_DOMAIN.',
+  );
+})();
 
 export async function extractTextFromFile(
-  file: File,
+  file: UploadFile,
 ): Promise<{ text: string; suggestedTitle: string }> {
   const formData = new FormData();
-  formData.append('file', file);
+  appendFile(formData, 'file', file);
 
   const response = await fetch(`${BASE_URL}/api/extract-text`, {
     method: 'POST',
@@ -42,9 +61,9 @@ export interface RenderPdfResult {
   expiresAt?: string;
 }
 
-export async function renderPdf(file: File): Promise<RenderPdfResult> {
+export async function renderPdf(file: UploadFile): Promise<RenderPdfResult> {
   const formData = new FormData();
-  formData.append('file', file);
+  appendFile(formData, 'file', file);
 
   const response = await fetch(`${BASE_URL}/api/render-pdf`, {
     method: 'POST',

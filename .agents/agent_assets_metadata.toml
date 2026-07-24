@@ -24,3 +24,9 @@ id = "6D9eBhJflroKwMGgvuhJb"
 uri = "file://screenshots/readwell-preview-after-fix.jpg"
 type = "image"
 title = "ReadWell preview after fix"
+
+[[outputs]]
+id = "mHOYw1jzyFlnMvlkwr15m"
+uri = "file://screenshots/readwell-final-preview.jpg"
+type = "image"
+title = "ReadWell final preview"
