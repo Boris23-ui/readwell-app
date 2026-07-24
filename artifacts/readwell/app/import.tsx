@@ -239,6 +239,9 @@ function MobilePickerButton({
         type: ['application/pdf', 'text/plain', 'text/markdown', 'text/html'],
         copyToCacheDirectory: true,
         multiple: false,
+        // base64 is not needed for upload (we stream the local URI via FormData)
+        // and returning it can cause File/Blob getter issues in some React Native versions.
+        base64: false,
       });
       if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
