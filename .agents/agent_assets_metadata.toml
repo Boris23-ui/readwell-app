@@ -18,3 +18,9 @@ id = "DhQWtQEo1mwvTasxsOkYt"
 uri = "file://screenshots/readwell-preview.jpg"
 type = "image"
 title = "ReadWell app preview"
+
+[[outputs]]
+id = "6D9eBhJflroKwMGgvuhJb"
+uri = "file://screenshots/readwell-preview-after-fix.jpg"
+type = "image"
+title = "ReadWell preview after fix"
