@@ -165,6 +165,10 @@ export default function PdfReader({ book }: { book: Book }) {
           p.pageNumber <= (segment.pageEnd ?? totalPages),
       )
     : [];
+  const lowConfidencePageCount = sectionPages.filter(page => page.lowConfidence === true).length;
+  const sectionHasLowConfidencePages = lowConfidencePageCount > 0;
+  const sectionHasOnlyLowConfidencePages =
+    sectionHasLowConfidencePages && lowConfidencePageCount === sectionPages.length;
 
   const [visiblePage, setVisiblePage] = useState(segment?.pageStart ?? 1);
 
@@ -417,19 +421,59 @@ export default function PdfReader({ book }: { book: Book }) {
           <Text style={[styles.quizCardSub, { color: colors.mutedForeground }]}>
             5 short questions about what you just read. Earns you XP and builds your comprehension score.
           </Text>
+          {sectionHasLowConfidencePages && (
+            <View style={styles.quizQualityWarning}>
+              <Feather name="alert-triangle" size={16} color="#92400E" />
+              <Text style={styles.quizQualityWarningText}>
+                {sectionHasOnlyLowConfidencePages
+                  ? 'This section may have limited quiz questions due to scan quality.'
+                  : 'Some pages in this section may limit quiz questions due to scan quality.'}
+              </Text>
+            </View>
+          )}
+          {sectionHasLowConfidencePages && (
+            <TouchableOpacity
+              onPress={handleSkipQuiz}
+              style={styles.prominentSkipBtn}
+              activeOpacity={0.85}
+            >
+              <Feather name="skip-forward" size={18} color="#92400E" />
+              <Text style={styles.prominentSkipBtnText}>
+                {segmentIndex + 1 >= totalSegments ? 'Skip quiz & finish' : 'Skip quiz & continue'}
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={handleTakeQuiz}
-            style={[styles.quizBtn, { backgroundColor: book.coverColor }]}
+            style={[
+              styles.quizBtn,
+              sectionHasLowConfidencePages
+                ? { backgroundColor: colors.card, borderColor: book.coverColor, borderWidth: 1 }
+                : { backgroundColor: book.coverColor },
+            ]}
             activeOpacity={0.85}
           >
-            <Text style={styles.quizBtnText}>Take Quiz</Text>
-            <Feather name="arrow-right" size={18} color="#FFF" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleSkipQuiz} style={styles.skipBtn}>
-            <Text style={[styles.skipBtnText, { color: colors.mutedForeground }]}>
-              {segmentIndex + 1 >= totalSegments ? 'Skip & finish' : 'Skip & continue'}
+            <Text
+              style={[
+                styles.quizBtnText,
+                sectionHasLowConfidencePages && { color: book.coverColor },
+              ]}
+            >
+              Take Quiz
             </Text>
+            <Feather
+              name="arrow-right"
+              size={18}
+              color={sectionHasLowConfidencePages ? book.coverColor : '#FFF'}
+            />
           </TouchableOpacity>
+          {!sectionHasLowConfidencePages && (
+            <TouchableOpacity onPress={handleSkipQuiz} style={styles.skipBtn}>
+              <Text style={[styles.skipBtnText, { color: colors.mutedForeground }]}>
+                {segmentIndex + 1 >= totalSegments ? 'Skip & finish' : 'Skip & continue'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       )}
 
@@ -515,6 +559,25 @@ const styles = StyleSheet.create({
   quizIconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   quizCardTitle: { fontSize: 20, fontFamily: 'Inter_700Bold' },
   quizCardSub: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
+  quizQualityWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(217, 119, 6, 0.25)',
+  },
+  quizQualityWarningText: {
+    flex: 1,
+    color: '#92400E',
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+    lineHeight: 18,
+  },
   quizBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -527,6 +590,19 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   quizBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  prominentSkipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    justifyContent: 'center',
+    backgroundColor: '#FEF3C7',
+    borderColor: '#D97706',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  prominentSkipBtnText: { color: '#92400E', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
   skipBtn: { paddingVertical: 10 },
   skipBtnText: { fontSize: 14, fontFamily: 'Inter_400Regular' },
   overlayRoot: { flex: 1 },
