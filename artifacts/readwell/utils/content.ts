@@ -49,19 +49,25 @@ export interface PdfQualityWarning {
   pageCount: number;
 }
 
+/** The fraction of blurry pages that triggers an advisory import warning. */
+export const LOW_CONFIDENCE_WARNING_FRACTION = 0.3;
+
 /**
  * Returns an import-time warning when low-confidence pages are common enough
- * that multiple quiz sections may be affected. A single blurry page is
- * highlighted in the reader instead of blocking or cluttering the import flow.
+ * that quiz sections may be affected.
  */
 export function getPdfQualityWarning(
   pages: Array<Pick<PdfPage, 'lowConfidence'>>,
 ): PdfQualityWarning | null {
   const pageCount = pages.length;
   const lowConfidencePageCount = pages.filter(page => page.lowConfidence === true).length;
-  const minimumWarningPages = Math.max(2, Math.ceil(pageCount * 0.25));
 
-  if (lowConfidencePageCount < minimumWarningPages) return null;
+  if (
+    pageCount === 0 ||
+    lowConfidencePageCount / pageCount <= LOW_CONFIDENCE_WARNING_FRACTION
+  ) {
+    return null;
+  }
   return { lowConfidencePageCount, pageCount };
 }
 

@@ -839,14 +839,19 @@ export default function ImportScreen() {
                 </View>
               </View>
               {pdfQualityWarning && (
-                <View style={styles.pdfQualityWarning}>
-                  <Feather name="alert-triangle" size={17} color="#92400E" />
+                <View
+                  style={[
+                    styles.pdfQualityWarning,
+                    { backgroundColor: `${colors.accent}12`, borderColor: `${colors.accent}40` },
+                  ]}
+                >
+                  <Feather name="alert-triangle" size={17} color={colors.accent} />
                   <View style={styles.pdfQualityWarningContent}>
-                    <Text style={styles.pdfQualityWarningTitle}>
-                      Several pages may be too blurry for quizzes
+                    <Text style={[styles.pdfQualityWarningTitle, { color: colors.foreground }]}>
+                      Quiz generation may be limited
                     </Text>
-                    <Text style={styles.pdfQualityWarningText}>
-                      {pdfQualityWarning.lowConfidencePageCount} of {pdfQualityWarning.pageCount} pages may have limited quiz text. You can still import and read the PDF, but some quiz sections may be limited.
+                    <Text style={[styles.pdfQualityWarningText, { color: colors.foreground }]}>
+                      {pdfQualityWarning.lowConfidencePageCount} of {pdfQualityWarning.pageCount} {pdfQualityWarning.pageCount === 1 ? 'page' : 'pages'} may be too blurry to read reliably. You can still add this book, but quizzes may be limited for those sections.
                     </Text>
                   </View>
                 </View>
@@ -1009,8 +1014,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: '#FEF3C7',
-    borderColor: 'rgba(217, 119, 6, 0.25)',
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 13,
@@ -1018,12 +1021,10 @@ const styles = StyleSheet.create({
   },
   pdfQualityWarningContent: { flex: 1, gap: 3 },
   pdfQualityWarningTitle: {
-    color: '#92400E',
     fontSize: 14,
     fontFamily: 'Inter_600SemiBold',
   },
   pdfQualityWarningText: {
-    color: '#92400E',
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
     lineHeight: 18,
