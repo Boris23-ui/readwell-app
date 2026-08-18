@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,15 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Book, Segment } from '@/types';
 import { splitIntoParagraphs, groupIntoSegments, buildPdfSegments, countWords, randomCoverColor } from '@/utils/content';
-import { extractTextFromFile, renderPdf, RenderPdfResult, deletePdfPages, type UploadFile } from '@/utils/api';
+import {
+  extractTextFromFile,
+  renderPdf,
+  RenderPdfResult,
+  deletePdfPages,
+  isAbortError,
+  type UploadFile,
+  type UploadProgress,
+} from '@/utils/api';
 
 // Mobile-only import — resolved at runtime so web bundle is not affected
 let DocumentPicker: typeof import('expo-document-picker') | null = null;
@@ -31,6 +39,12 @@ if (Platform.OS !== 'web') {
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown', '.html', '.htm'];
 const ACCEPTED_MIME = 'application/pdf,text/plain,text/markdown,text/html';
+
+function createImportAbortError(): Error {
+  const error = new Error('Import cancelled.');
+  error.name = 'AbortError';
+  return error;
+}
 
 // ─── File Drop Zone (web-only inner component) ───────────────────────────────
 
@@ -347,11 +361,47 @@ export default function ImportScreen() {
   const [sourceFile, setSourceFile] = useState<{ name: string; chars: number } | null>(null);
   const [pdfData, setPdfData] = useState<RenderPdfResult | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const importAbortRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
 
   const canProcess =
     title.trim().length > 0 &&
     (pdfData ? pdfData.pages.length > 0 : content.trim().length > 50);
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      importAbortRef.current?.abort();
+    };
+  }, []);
+
+  const cancelImport = useCallback(() => {
+    importAbortRef.current?.abort();
+    setUploadProgress(null);
+    setStatusMsg('Cancelling import…');
+  }, []);
+
+  const updateUploadProgress = useCallback((progress: UploadProgress) => {
+    if (!isMountedRef.current) return;
+    setUploadProgress(progress.phase === 'uploading' ? progress.fraction : null);
+    setStatusMsg(
+      progress.phase === 'uploading'
+        ? `Uploading PDF… ${Math.round(progress.fraction * 100)}%`
+        : 'Rendering pages and extracting text…',
+    );
+  }, []);
+
+  const discardPdfPages = useCallback((serverBookId: string) => {
+    deletePdfPages(serverBookId)
+      .then(() => clearPendingPdfImport(serverBookId))
+      .catch(() => {
+        // Keep the pending-import record when offline so launch cleanup can
+        // retry the deletion later.
+        console.warn('PDF page cleanup deferred until the app reconnects');
+      });
+  }, [clearPendingPdfImport]);
 
   // ── Shared handler: receives extracted text from any source ──────────────
 
@@ -366,14 +416,17 @@ export default function ImportScreen() {
 
   // ── PDF: render pages on the server, then build a page-based book ──────────
 
-  const handlePdfFile = async (file: UploadFile, filename: string) => {
-    setStatusMsg('Rendering pages…');
+  const handlePdfFile = async (file: UploadFile, filename: string, signal: AbortSignal) => {
+    setStatusMsg('Uploading PDF…');
+    setUploadProgress(null);
     try {
-      const result = await renderPdf(file);
+      const result = await renderPdf(file, { signal, onProgress: updateUploadProgress });
+      if (signal.aborted) throw createImportAbortError();
       setStatusMsg('');
+      setUploadProgress(null);
       // Track this render so orphaned page images can be cleaned up if the
       // app is killed before the book is saved.
-      registerPendingPdfImport(result.bookId).catch(() => {});
+      await registerPendingPdfImport(result.bookId);
       setPdfData(result);
       // Combined text feeds quiz generation and the word count.
       const combinedText = result.pages.map(p => p.text).join('\n\n').trim();
@@ -383,6 +436,7 @@ export default function ImportScreen() {
       setError('');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
+      if (isAbortError(e)) throw e;
       // Page-cap or oversized errors should surface, not silently fall back.
       const msg = e?.message ?? '';
       if (/maximum supported|too large|pages/i.test(msg)) {
@@ -390,10 +444,20 @@ export default function ImportScreen() {
         throw e;
       }
       // Otherwise fall back to a text-only book so the user is never blocked.
-      setStatusMsg('Rendering failed — importing as text…');
-      const result = await extractTextFromFile(file);
+      setStatusMsg('Rendering failed — extracting text instead…');
+      const result = await extractTextFromFile(file, {
+        signal,
+        onProgress: progress => {
+          if (progress.phase === 'uploading') {
+            updateUploadProgress(progress);
+          } else {
+            setStatusMsg('Extracting text…');
+          }
+        },
+      });
       applyExtractedText(result.text, result.suggestedTitle, filename);
       setStatusMsg('');
+      setUploadProgress(null);
     }
   };
 
@@ -408,23 +472,36 @@ export default function ImportScreen() {
 
     setExtracting(true);
     setError('');
+    const controller = new AbortController();
+    importAbortRef.current = controller;
 
     try {
       if (ext === 'pdf') {
         // PDF → render pages on the server
-        await handlePdfFile(file, file.name);
+        await handlePdfFile(file, file.name, controller.signal);
       } else {
         // Plain text → read directly in browser
         const text = await file.text();
+        if (controller.signal.aborted) throw createImportAbortError();
         const rawName = file.name.replace(/\.[^.]+$/, '');
         const suggestedTitle = rawName.replace(/[-_]/g, ' ').trim();
         applyExtractedText(text, suggestedTitle, file.name);
       }
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to extract text from file.');
+      if (isAbortError(e)) {
+        if (isMountedRef.current) setError('Import cancelled. Choose another file when ready.');
+      } else if (isMountedRef.current) {
+        setError(e?.message ?? 'Failed to extract text from file.');
+      }
     } finally {
-      setExtracting(false);
-      setStatusMsg('');
+      if (importAbortRef.current === controller) {
+        importAbortRef.current = null;
+        if (isMountedRef.current) {
+          setExtracting(false);
+          setStatusMsg('');
+          setUploadProgress(null);
+        }
+      }
     }
   };
 
@@ -435,20 +512,42 @@ export default function ImportScreen() {
 
     setExtracting(true);
     setError('');
+    const controller = new AbortController();
+    importAbortRef.current = controller;
 
     try {
       const mobileFile: UploadFile = { uri, name, type: mimeType };
       if (mimeType === 'application/pdf' || ext === 'pdf') {
-        await handlePdfFile(mobileFile, name);
+        await handlePdfFile(mobileFile, name, controller.signal);
       } else {
-        const result = await extractTextFromFile(mobileFile);
+        setStatusMsg('Uploading file…');
+        const result = await extractTextFromFile(mobileFile, {
+          signal: controller.signal,
+          onProgress: progress => {
+            if (progress.phase === 'uploading') {
+              setUploadProgress(progress.fraction);
+              setStatusMsg(`Uploading file… ${Math.round(progress.fraction * 100)}%`);
+            }
+            else setStatusMsg('Extracting text…');
+          },
+        });
         applyExtractedText(result.text, result.suggestedTitle, name);
       }
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to read file.');
+      if (isAbortError(e)) {
+        if (isMountedRef.current) setError('Import cancelled. Choose another file when ready.');
+      } else if (isMountedRef.current) {
+        setError(e?.message ?? 'Failed to read file.');
+      }
     } finally {
-      setExtracting(false);
-      setStatusMsg('');
+      if (importAbortRef.current === controller) {
+        importAbortRef.current = null;
+        if (isMountedRef.current) {
+          setExtracting(false);
+          setStatusMsg('');
+          setUploadProgress(null);
+        }
+      }
     }
   };
 
@@ -542,11 +641,10 @@ export default function ImportScreen() {
         <View style={[styles.header, { paddingTop: topPad }]}>
           <TouchableOpacity
             onPress={() => {
-              // Clean up any rendered-but-unsaved PDF pages before leaving
-              if (pdfData) {
-                deletePdfPages(pdfData.bookId).catch(() => {});
-                clearPendingPdfImport(pdfData.bookId).catch(() => {});
-              }
+              // Abort an in-flight upload and clean up any rendered-but-unsaved
+              // PDF pages before leaving.
+              cancelImport();
+              if (pdfData) discardPdfPages(pdfData.bookId);
               router.back();
             }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -605,8 +703,25 @@ export default function ImportScreen() {
             {/* Render/upload progress */}
             {extracting && statusMsg.length > 0 && (
               <View style={[styles.statusRow, { backgroundColor: `${colors.primary}12` }]}>
-                <ActivityIndicator color={colors.primary} size="small" />
-                <Text style={[styles.statusText, { color: colors.foreground }]}>{statusMsg}</Text>
+                <View style={styles.statusContent}>
+                  <ActivityIndicator color={colors.primary} size="small" />
+                  <Text style={[styles.statusText, { color: colors.foreground }]} numberOfLines={2}>
+                    {statusMsg}
+                  </Text>
+                  <TouchableOpacity onPress={cancelImport} testID="cancel-import">
+                    <Text style={[styles.cancelImportText, { color: colors.primary }]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+                {uploadProgress !== null && (
+                  <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { backgroundColor: colors.primary, width: `${uploadProgress * 100}%` as any },
+                      ]}
+                    />
+                  </View>
+                )}
               </View>
             )}
 
@@ -620,8 +735,7 @@ export default function ImportScreen() {
                 onClear={() => {
                   // Clean up rendered page images that were never saved as a book
                   if (pdfData) {
-                    deletePdfPages(pdfData.bookId).catch(() => {});
-                    clearPendingPdfImport(pdfData.bookId).catch(() => {});
+                    discardPdfPages(pdfData.bookId);
                   }
                   setSourceFile(null);
                   setContent('');
@@ -783,14 +897,16 @@ const styles = StyleSheet.create({
   fileBadgeName: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
   fileBadgeMeta: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 2 },
   statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: 10,
     borderRadius: 12,
     padding: 14,
     marginTop: 12,
   },
+  statusContent: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   statusText: { fontSize: 14, fontFamily: 'Inter_500Medium' },
+  cancelImportText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
+  progressTrack: { height: 4, borderRadius: 2, overflow: 'hidden' },
+  progressFill: { height: 4, borderRadius: 2 },
 
   // Divider
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

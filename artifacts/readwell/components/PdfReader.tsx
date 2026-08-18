@@ -174,6 +174,24 @@ export default function PdfReader({ book }: { book: Book }) {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [segmentIndex]);
 
+  // Warm the disk cache for the current section so a reader can continue
+  // through a brief offline period after the pages have loaded once.
+  useEffect(() => {
+    const sectionUris = sectionPages.map(page => resolveStorageUrl(page.imageUrl));
+    if (sectionUris.length === 0) return;
+
+    let cancelled = false;
+    Promise.all(sectionUris.map(uri => Image.prefetch(uri, 'disk'))).catch(error => {
+      if (!cancelled) {
+        console.warn('PDF page prefetch skipped', error);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [book.id, segmentIndex]);
+
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setElapsed(Math.floor((Date.now() - sessionStart) / 1000));
@@ -341,6 +359,7 @@ export default function PdfReader({ book }: { book: Book }) {
                 source={{ uri }}
                 style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
                 contentFit="contain"
+                cachePolicy="disk"
                 transition={150}
                 onError={(e) => onImageError(page.pageNumber, e)}
               />

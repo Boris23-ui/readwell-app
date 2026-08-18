@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import multer from "multer";
 import { promises as fs } from "fs";
 import os from "os";
@@ -159,12 +159,31 @@ interface RenderedPage {
   lowConfidence: boolean;
 }
 
+class PdfImportCancelledError extends Error {
+  constructor() {
+    super("PDF import cancelled by the client");
+    this.name = "PdfImportCancelledError";
+  }
+}
+
+function assertPdfRequestActive(req: Request, clientAborted: boolean): void {
+  if (clientAborted || req.aborted) {
+    throw new PdfImportCancelledError();
+  }
+}
+
 // expiresAt gives clients a hint for when orphaned page images may be
 // lazily cleaned up (2 h after upload). Pages should be promoted to a
 // saved book before this time, or explicitly deleted by the client.
 const PDF_PAGES_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 router.post("/render-pdf", upload.single("file"), async (req, res) => {
+  let clientAborted = req.aborted;
+  const onRequestAborted = () => {
+    clientAborted = true;
+  };
+  req.once("aborted", onRequestAborted);
+
   // Fire-and-forget: lazily clean up orphaned pdf-pages folders older than
   // the TTL. Rate-limited to at most once per ORPHAN_CLEANUP_INTERVAL_MS so
   // that concurrent imports don't hammer storage with simultaneous scans.
@@ -188,6 +207,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
   logger.info({ filename: originalname, size: buffer.length }, "Rendering PDF pages");
 
   try {
+    assertPdfRequestActive(req, clientAborted);
     await fs.mkdir(workDir, { recursive: true });
     const pdfPath = path.join(workDir, "input.pdf");
     await fs.writeFile(pdfPath, buffer);
@@ -219,11 +239,13 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
       ],
       { maxBuffer: 1024 * 1024 * 64 },
     );
+    assertPdfRequestActive(req, clientAborted);
 
     const pages: RenderedPage[] = [];
     let anyOcrUsed = false;
 
     for (let p = 1; p <= pageCount; p++) {
+      assertPdfRequestActive(req, clientAborted);
       // pdftoppm zero-pads the page number to the width of the total count
       const padWidth = String(pageCount).length;
       const padded = String(p).padStart(padWidth, "0");
@@ -295,6 +317,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
         lowConfidence: computePageConfidence(text),
       });
     }
+    assertPdfRequestActive(req, clientAborted);
 
     const rawName = originalname.replace(/\.[^.]+$/, "");
     const suggestedTitle = rawName.replace(/[-_]/g, " ").replace(/\s{2,}/g, " ").trim();
@@ -303,14 +326,22 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
 
     res.json({ bookId, suggestedTitle, pageCount, pages, ocrUsed: anyOcrUsed, expiresAt });
   } catch (err) {
-    logger.error({ err, filename: originalname }, "PDF render failed");
+    const wasCancelled = err instanceof PdfImportCancelledError || clientAborted || req.aborted;
+    if (wasCancelled) {
+      logger.warn({ bookId }, "PDF import cancelled; cleaning partial pages");
+    } else {
+      logger.error({ err, filename: originalname }, "PDF render failed");
+    }
     // Best-effort cleanup: delete any page images that were already uploaded
     // before the error occurred so they do not linger in storage indefinitely.
     objectStorage.deletePdfPages(bookId).catch((cleanupErr) => {
       logger.warn({ err: cleanupErr, bookId }, "Partial-import cleanup failed");
     });
-    res.status(500).json({ error: "Failed to render PDF pages." });
+    if (!wasCancelled && !res.headersSent) {
+      res.status(500).json({ error: "Failed to render PDF pages." });
+    }
   } finally {
+    req.off("aborted", onRequestAborted);
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 });

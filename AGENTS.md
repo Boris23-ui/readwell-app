@@ -238,6 +238,17 @@ not duplicated. Existing work has focused on:
 - Clearer unrecoverable quiz errors
 - Per-user PDF storage cost protection
 
+PDF import currently uses an abortable XHR multipart request so the mobile and
+web screens can show upload percentage and cancel an in-flight import. The
+server watches for disconnected clients and deletes any page images uploaded
+before cancellation. Do not replace this with a plain `fetch` upload without
+preserving `AbortSignal` support and the `{ uri, name, type }` React Native
+file shape.
+
+Rendered PDF pages use Expo Image's disk cache in the reader. A page deletion
+queue is only cleared after the server confirms deletion; failed/offline
+cleanup must remain queued for a later retry.
+
 ## Recommended agent workflow
 
 1. Read this file and the relevant source files.
