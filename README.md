@@ -15,7 +15,7 @@ Public GitHub repository: <https://github.com/Boris23-ui/readwell-app>
 
 - **Mobile app:** Expo 54, React Native, Expo Router, TypeScript
 - **API:** Express 5, TypeScript, OpenAPI-generated client and Zod schemas
-- **AI:** Replit-managed Gemini integration
+- **AI:** Google Gemini API
 - **Storage:** Replit Object Storage for uploaded PDFs and rendered page images
 - **Workspace:** pnpm workspaces and Node.js 24
 
@@ -41,7 +41,7 @@ lib/
 - A configured Replit environment with:
   - a PostgreSQL database
   - Replit Object Storage
-  - the managed Gemini integration
+  - a Google Gemini API key, such as one created in Google AI Studio
 
 Install dependencies from the repository root:
 
@@ -76,13 +76,18 @@ PDF uploads also require the server's object-storage variables:
 - `PRIVATE_OBJECT_DIR`
 - `PUBLIC_OBJECT_SEARCH_PATHS`
 
-Quiz generation uses the Replit-managed Gemini integration variables:
+Quiz generation calls Google's Gemini API directly. Keep the API key on the
+server:
 
-- `AI_INTEGRATIONS_GEMINI_API_KEY`
-- `AI_INTEGRATIONS_GEMINI_BASE_URL`
+- `GEMINI_API_KEY` — required Google Gemini API key
+- `GEMINI_MODEL` — optional model name; defaults to `gemini-3.6-flash`
 
-Do not commit these values or put them in the mobile app bundle. Configure them
-as Replit Secrets or environment variables instead.
+Create or manage the key in Google AI Studio, then add it to the Replit
+Secrets manager as `GEMINI_API_KEY`. A Google AI Pro subscription can be used
+with the Google Gemini API, but API usage and quotas are still governed by the
+Google AI API project associated with the key.
+
+Do not commit these values or put them in the mobile app bundle.
 
 ## Run the Expo app
 
