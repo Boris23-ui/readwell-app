@@ -16,4 +16,7 @@ unavailable for this key.
 
 **How to apply:** Keep Google credentials server-only, use the direct
 `GoogleGenAI({ apiKey })` client, and treat `GEMINI_MODEL` as the deployment
-override when Google changes model availability.
+override when Google changes model availability. Treat model output as
+untrusted: keep input bounded, validate the expected five-question shape, and
+use bounded retries, timeouts, and rate limits so a transient AI failure does
+not become an uncontrolled cost or a broken quiz.

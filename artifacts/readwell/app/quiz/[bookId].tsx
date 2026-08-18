@@ -21,6 +21,37 @@ import { Question, Quiz } from '@/types';
 import { calculateSessionXp } from '@/utils/xp';
 import { isTextQualityTooLow } from '@/utils/content';
 
+type QuizGenerationError = Error & { code?: string };
+
+const RETRYABLE_QUIZ_ERROR_CODES = new Set([
+  'QUIZ_RATE_LIMITED',
+  'GEMINI_RATE_LIMITED',
+  'GEMINI_TIMEOUT',
+  'GEMINI_INVALID_RESPONSE',
+  'GEMINI_UNAVAILABLE',
+]);
+
+function getQuizErrorMessage(code?: string): string {
+  switch (code) {
+    case 'TEXT_TOO_LONG':
+      return 'This reading section is too long for a quiz. Try a shorter section.';
+    case 'QUIZ_RATE_LIMITED':
+    case 'GEMINI_RATE_LIMITED':
+      return 'Quiz generation is busy right now. Please wait a moment and try again.';
+    case 'GEMINI_TIMEOUT':
+      return 'Quiz generation took too long. Check your connection and try again.';
+    case 'GEMINI_AUTH_ERROR':
+    case 'GEMINI_NOT_CONFIGURED':
+      return 'The quiz service needs to be configured. Please try again later.';
+    case 'GEMINI_MODEL_UNAVAILABLE':
+      return 'The quiz model is temporarily unavailable. Please try again later.';
+    case 'GEMINI_INVALID_RESPONSE':
+      return 'The AI returned an unusable quiz. Please try again.';
+    default:
+      return 'Could not generate quiz. Please try again.';
+  }
+}
+
 export default function QuizScreen() {
   const params = useLocalSearchParams<{
     bookId: string;
@@ -39,6 +70,8 @@ export default function QuizScreen() {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [loadErrorCode, setLoadErrorCode] = useState<string>();
+  const [retryNonce, setRetryNonce] = useState(0);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<(number | string | null)[]>([]);
   const [revealed, setRevealed] = useState(false);
@@ -64,6 +97,7 @@ export default function QuizScreen() {
     // Guard against garbled OCR text before hitting the API
     if (isTextQualityTooLow(segmentText)) {
       setLoadError('Text quality too low to generate a useful quiz for this section. The scanned text may be too garbled or short.');
+      setLoadErrorCode('TEXT_TOO_SHORT');
       setLoading(false);
       return;
     }
@@ -77,14 +111,16 @@ export default function QuizScreen() {
       })
       .catch(err => {
         console.error('Quiz generation error:', err);
-        if (err?.code === 'TEXT_TOO_SHORT') {
+        const error = err as QuizGenerationError;
+        if (error?.code === 'TEXT_TOO_SHORT') {
           setLoadError('Text quality too low to generate a useful quiz for this section. The scanned text may be too garbled or short.');
         } else {
-          setLoadError('Could not generate quiz. Please try again.');
+          setLoadError(getQuizErrorMessage(error?.code));
         }
+        setLoadErrorCode(error?.code);
         setLoading(false);
       });
-  }, [book, segmentIndex, bookId]);
+  }, [book, segmentIndex, bookId, profile.readingLevel, retryNonce]);
 
   if (!book) {
     return (
@@ -113,6 +149,9 @@ export default function QuizScreen() {
 
   if (loadError || !quiz) {
     const isQualityError = loadError.startsWith('Text quality too low');
+    const isRetryableError =
+      !isQualityError &&
+      RETRYABLE_QUIZ_ERROR_CODES.has(loadErrorCode ?? '');
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Feather
@@ -150,12 +189,25 @@ export default function QuizScreen() {
             </TouchableOpacity>
           </>
         ) : (
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-          >
-            <Text style={styles.retryBtnText}>Go back</Text>
-          </TouchableOpacity>
+          <>
+            {isRetryableError && (
+              <TouchableOpacity
+                onPress={() => {
+                  setQuiz(null);
+                  setLoadError('');
+                  setLoadErrorCode(undefined);
+                  setLoading(true);
+                  setRetryNonce((value) => value + 1);
+                }}
+                style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.retryBtnText}>Try again</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
     );

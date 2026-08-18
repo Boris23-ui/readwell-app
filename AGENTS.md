@@ -105,8 +105,11 @@ values blindly; verify their usage first.
 - Keep Gemini calls behind the API server.
 - Preserve JSON-only quiz output and validate the response before returning it.
 - Keep evidence quotes grounded in the supplied passage.
-- Consider rate limiting, request-size limits, retries, and cost controls before
-  adding batch or automatic AI calls.
+- The quiz API currently applies a 12,000-character passage limit, a best-effort
+  10-requests-per-minute server rate limit, a 30-second Google request timeout,
+  and one bounded retry for transient failures or malformed AI output.
+- The mobile quiz screen maps API error codes to user-facing messages and offers
+  retry for temporary failures.
 
 ## Environment and storage
 
