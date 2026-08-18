@@ -245,14 +245,24 @@ export class ObjectStorageService {
 
     // Group files by bookId (the path component immediately after pdf-pages/)
     const bookIdToLatestTime = new Map<string, number>();
+    const bookIdsWithIncompleteMetadata = new Set<string>();
     for (const file of files) {
       // objectName looks like: <entityDir>/pdf-pages/<bookId>/<page>.jpg
       const afterPrefix = file.name.slice(prefixObject.length);
       const bookId = afterPrefix.split('/')[0];
       if (!bookId) continue;
-      const timeCreated = file.metadata?.timeCreated
-        ? new Date(file.metadata.timeCreated as string).getTime()
-        : 0;
+      const rawTimeCreated = file.metadata?.timeCreated;
+      const timeCreated = rawTimeCreated
+        ? new Date(rawTimeCreated as string).getTime()
+        : Number.NaN;
+      if (!Number.isFinite(timeCreated)) {
+        // Missing metadata must never be treated as an old object. A cloud
+        // listing can return incomplete file metadata during propagation or
+        // transient storage failures; deleting that folder could remove an
+        // active book's pages.
+        bookIdsWithIncompleteMetadata.add(bookId);
+        continue;
+      }
       const existing = bookIdToLatestTime.get(bookId) ?? 0;
       if (timeCreated > existing) {
         bookIdToLatestTime.set(bookId, timeCreated);
@@ -262,6 +272,9 @@ export class ObjectStorageService {
     const cutoff = Date.now() - ttlMs;
     const deletions: Promise<void>[] = [];
     for (const [bookId, latestTime] of bookIdToLatestTime) {
+      if (bookIdsWithIncompleteMetadata.has(bookId)) {
+        continue;
+      }
       if (latestTime < cutoff) {
         deletions.push(
           this.deletePdfPages(bookId).catch(() => {

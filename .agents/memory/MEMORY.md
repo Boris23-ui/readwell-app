@@ -1,5 +1,6 @@
 - [Metro _tmp_ blocklist](metro-tmp-blocklist.md) — pnpm packages that create _tmp_ dirs crash Metro; block `/node_modules[/\][^/\]*_tmp_\d+/` in metro.config.js resolver.blockList
 - [PDF Reader Architecture](pdf-reader-architecture.md) — how PDF page-image rendering, storage, and reading are implemented end-to-end
 - [PDF import resilience](pdf-import-resilience.md) — preserve abortable uploads, server-side cancellation cleanup, and disk-cached pages
+- [Object storage cleanup safety](object-storage-cleanup-safety.md) — fail closed when cloud listings omit timestamps; never treat unknown age as orphaned
 - [Mobile API and file upload gotchas](mobile-api-and-file-upload.md) — use the Expo dev domain for API calls and {uri,name,type} objects for mobile uploads
 - [Google Gemini direct API](google-gemini-direct-api.md) — keep Gemini server-side with GEMINI_API_KEY and a configurable GEMINI_MODEL

@@ -138,6 +138,14 @@ function makeTimedFile(name: string, timeCreated: Date) {
   };
 }
 
+function makeIncompleteMetadataFile(name: string) {
+  return {
+    name,
+    metadata: {},
+    delete: mockDelete,
+  };
+}
+
 describe("ObjectStorageService.deleteOrphanedPdfPageFolders", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -214,6 +222,45 @@ describe("ObjectStorageService.deleteOrphanedPdfPageFolders", () => {
 
     // Folder should NOT be deleted because its newest file is within TTL
     expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("keeps a folder when any file is missing timeCreated metadata", async () => {
+    const oldFile = makeTimedFile(
+      `private/pdf-pages/${BOOK_A}/001.jpg`,
+      new Date(Date.now() - TTL_MS - 60_000),
+    );
+    const incompleteFile = makeIncompleteMetadataFile(
+      `private/pdf-pages/${BOOK_A}/002.jpg`,
+    );
+
+    mockGetFiles.mockResolvedValueOnce([[oldFile, incompleteFile]]);
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    // Missing metadata is fail-closed rather than interpreted as epoch time.
+    expect(mockGetFiles).toHaveBeenCalledOnce();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("skips only the incomplete folder while still deleting valid old siblings", async () => {
+    const incompleteFile = makeIncompleteMetadataFile(
+      `private/pdf-pages/${BOOK_A}/001.jpg`,
+    );
+    const oldFile = makeTimedFile(
+      `private/pdf-pages/${BOOK_B}/001.jpg`,
+      new Date(Date.now() - TTL_MS - 60_000),
+    );
+
+    mockGetFiles
+      .mockResolvedValueOnce([[incompleteFile, oldFile]])
+      .mockResolvedValueOnce([[oldFile]]);
+
+    const svc = makeService();
+    await svc.deleteOrphanedPdfPageFolders(TTL_MS);
+
+    expect(mockDelete).toHaveBeenCalledOnce();
+    expect(mockDelete).toHaveBeenCalledWith({ ignoreNotFound: true });
   });
 
   it("swallows a per-folder error so sibling folders are still deleted", async () => {
