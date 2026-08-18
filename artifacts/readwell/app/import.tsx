@@ -18,7 +18,15 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/AppContext';
 import { Book, Segment } from '@/types';
-import { splitIntoParagraphs, groupIntoSegments, buildPdfSegments, countWords, randomCoverColor } from '@/utils/content';
+import {
+  splitIntoParagraphs,
+  groupIntoSegments,
+  buildPdfSegments,
+  countWords,
+  getPdfQualityWarning,
+  randomCoverColor,
+  type PdfQualityWarning,
+} from '@/utils/content';
 import {
   extractTextFromFile,
   renderPdf,
@@ -360,6 +368,7 @@ export default function ImportScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [sourceFile, setSourceFile] = useState<{ name: string; chars: number } | null>(null);
   const [pdfData, setPdfData] = useState<RenderPdfResult | null>(null);
+  const [pdfQualityWarning, setPdfQualityWarning] = useState<PdfQualityWarning | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const importAbortRef = useRef<AbortController | null>(null);
@@ -407,6 +416,7 @@ export default function ImportScreen() {
 
   const applyExtractedText = (text: string, suggestedTitle: string, filename: string) => {
     setPdfData(null);
+    setPdfQualityWarning(null);
     setContent(text);
     if (!title.trim() && suggestedTitle) setTitle(suggestedTitle);
     setSourceFile({ name: filename, chars: text.length });
@@ -428,6 +438,7 @@ export default function ImportScreen() {
       // app is killed before the book is saved.
       await registerPendingPdfImport(result.bookId);
       setPdfData(result);
+      setPdfQualityWarning(getPdfQualityWarning(result.pages));
       // Combined text feeds quiz generation and the word count.
       const combinedText = result.pages.map(p => p.text).join('\n\n').trim();
       setContent(combinedText);
@@ -740,6 +751,7 @@ export default function ImportScreen() {
                   setSourceFile(null);
                   setContent('');
                   setPdfData(null);
+                   setPdfQualityWarning(null);
                 }}
                 colors={colors}
               />
@@ -812,19 +824,34 @@ export default function ImportScreen() {
 
           {/* ── PDF summary (shown instead of content textarea) ── */}
           {pdfData && (
-            <View style={[styles.pdfSummary, { backgroundColor: colors.card, borderColor: `${colors.primary}30` }]}>
-              <View style={[styles.pdfSummaryIcon, { backgroundColor: `${colors.primary}15` }]}>
-                <Feather name="file-text" size={20} color={colors.primary} />
+            <>
+              <View style={[styles.pdfSummary, { backgroundColor: colors.card, borderColor: `${colors.primary}30` }]}>
+                <View style={[styles.pdfSummaryIcon, { backgroundColor: `${colors.primary}15` }]}>
+                  <Feather name="file-text" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.pdfSummaryTitle, { color: colors.foreground }]}>
+                    PDF ready to read
+                  </Text>
+                  <Text style={[styles.pdfSummaryMeta, { color: colors.mutedForeground }]}>
+                    {pdfData.pageCount} {pdfData.pageCount === 1 ? 'page' : 'pages'} · {Math.ceil(pdfData.pageCount / 3)} {Math.ceil(pdfData.pageCount / 3) === 1 ? 'section' : 'sections'} · ~{countWords(content).toLocaleString()} words
+                  </Text>
+                </View>
               </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.pdfSummaryTitle, { color: colors.foreground }]}>
-                  PDF ready to read
-                </Text>
-                <Text style={[styles.pdfSummaryMeta, { color: colors.mutedForeground }]}>
-                  {pdfData.pageCount} {pdfData.pageCount === 1 ? 'page' : 'pages'} · {Math.ceil(pdfData.pageCount / 3)} {Math.ceil(pdfData.pageCount / 3) === 1 ? 'section' : 'sections'} · ~{countWords(content).toLocaleString()} words
-                </Text>
-              </View>
-            </View>
+              {pdfQualityWarning && (
+                <View style={styles.pdfQualityWarning}>
+                  <Feather name="alert-triangle" size={17} color="#92400E" />
+                  <View style={styles.pdfQualityWarningContent}>
+                    <Text style={styles.pdfQualityWarningTitle}>
+                      Several pages may be too blurry for quizzes
+                    </Text>
+                    <Text style={styles.pdfQualityWarningText}>
+                      {pdfQualityWarning.lowConfidencePageCount} of {pdfQualityWarning.pageCount} pages may have limited quiz text. You can still import and read the PDF, but some quiz sections may be limited.
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </>
           )}
 
           {/* ── Error ──────────────────────────────────────── */}
@@ -977,5 +1004,28 @@ const styles = StyleSheet.create({
   pdfSummaryMeta: {
     fontSize: 13,
     fontFamily: 'Inter_400Regular',
+  },
+  pdfQualityWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#FEF3C7',
+    borderColor: 'rgba(217, 119, 6, 0.25)',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+  },
+  pdfQualityWarningContent: { flex: 1, gap: 3 },
+  pdfQualityWarningTitle: {
+    color: '#92400E',
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  pdfQualityWarningText: {
+    color: '#92400E',
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 18,
   },
 });

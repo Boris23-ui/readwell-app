@@ -44,6 +44,27 @@ export function buildPdfSegments(pages: PdfPage[], pagesPerSegment = 3): Segment
   return segments;
 }
 
+export interface PdfQualityWarning {
+  lowConfidencePageCount: number;
+  pageCount: number;
+}
+
+/**
+ * Returns an import-time warning when low-confidence pages are common enough
+ * that multiple quiz sections may be affected. A single blurry page is
+ * highlighted in the reader instead of blocking or cluttering the import flow.
+ */
+export function getPdfQualityWarning(
+  pages: Array<Pick<PdfPage, 'lowConfidence'>>,
+): PdfQualityWarning | null {
+  const pageCount = pages.length;
+  const lowConfidencePageCount = pages.filter(page => page.lowConfidence === true).length;
+  const minimumWarningPages = Math.max(2, Math.ceil(pageCount * 0.25));
+
+  if (lowConfidencePageCount < minimumWarningPages) return null;
+  return { lowConfidencePageCount, pageCount };
+}
+
 export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(w => w.length > 0).length;
 }
