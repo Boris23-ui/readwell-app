@@ -11,6 +11,9 @@ pnpm monorepo.
 
 Public GitHub repository: <https://github.com/Boris23-ui/readwell-app>
 
+For coding-agent context, architecture decisions, workflows, and safe Gemini
+API usage, see [`AGENTS.md`](AGENTS.md).
+
 ## Tech stack
 
 - **Mobile app:** Expo 54, React Native, Expo Router, TypeScript
