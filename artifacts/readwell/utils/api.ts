@@ -109,6 +109,12 @@ function getBaseUrl(): string {
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   if (domain) return `https://${domain}`;
   if (typeof window !== 'undefined' && window.location?.origin) {
+    if (
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+      (window.location.port === '8081' || window.location.port === '19006' || window.location.port === '8082')
+    ) {
+      return 'http://localhost:5001';
+    }
     return window.location.origin;
   }
   throw new Error(

@@ -450,7 +450,7 @@ export default function ImportScreen() {
       if (isAbortError(e)) throw e;
       // Page-cap or oversized errors should surface, not silently fall back.
       const msg = e?.message ?? '';
-      if (/maximum supported|too large|pages/i.test(msg)) {
+      if (/maximum supported|too large/i.test(msg)) {
         setStatusMsg('');
         throw e;
       }
