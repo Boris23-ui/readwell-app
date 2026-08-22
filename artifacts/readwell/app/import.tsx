@@ -362,11 +362,29 @@ export default function ImportScreen() {
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [content, setContent] = useState('');
+  const [language, setLanguage] = useState('English');
   const [processing, setProcessing] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [sourceFile, setSourceFile] = useState<{ name: string; chars: number } | null>(null);
+
+  const MAX_BOOKS = 10;
+  const MAX_PDF_PAGES = 500;
+  const currentTotalPages = books.reduce((sum, b) => sum + (b.pages?.length || 0), 0);
+  const currentBooks = books.length;
+
+  const checkStorageLimit = (isPdf: boolean): boolean => {
+    if (currentBooks >= MAX_BOOKS) {
+      setError(`Storage limit reached: You can only have up to ${MAX_BOOKS} books at a time. Please delete some books before importing more.`);
+      return false;
+    }
+    if (isPdf && currentTotalPages >= MAX_PDF_PAGES) {
+      setError(`Storage limit reached: You have ${currentTotalPages} PDF pages stored across your books (limit is ${MAX_PDF_PAGES}). Please delete some PDF books before importing more.`);
+      return false;
+    }
+    return true;
+  };
   const [pdfData, setPdfData] = useState<RenderPdfResult | null>(null);
   const [pdfQualityWarning, setPdfQualityWarning] = useState<PdfQualityWarning | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
@@ -430,7 +448,7 @@ export default function ImportScreen() {
     setStatusMsg('Uploading PDF…');
     setUploadProgress(null);
     try {
-      const result = await renderPdf(file, { signal, onProgress: updateUploadProgress });
+      const result = await renderPdf(file, { signal, onProgress: updateUploadProgress, language });
       if (signal.aborted) throw createImportAbortError();
       setStatusMsg('');
       setUploadProgress(null);
@@ -481,6 +499,8 @@ export default function ImportScreen() {
       return;
     }
 
+    if (!checkStorageLimit(ext === 'pdf')) return;
+
     setExtracting(true);
     setError('');
     const controller = new AbortController();
@@ -520,6 +540,9 @@ export default function ImportScreen() {
 
   const handleMobileFile = async (uri: string, name: string, mimeType: string) => {
     const ext = name.split('.').pop()?.toLowerCase() ?? '';
+    const isPdf = mimeType === 'application/pdf' || ext === 'pdf';
+
+    if (!checkStorageLimit(isPdf)) return;
 
     setExtracting(true);
     setError('');
@@ -534,6 +557,7 @@ export default function ImportScreen() {
         setStatusMsg('Uploading file…');
         const result = await extractTextFromFile(mobileFile, {
           signal: controller.signal,
+          language,
           onProgress: progress => {
             if (progress.phase === 'uploading') {
               setUploadProgress(progress.fraction);
@@ -566,6 +590,10 @@ export default function ImportScreen() {
 
   const handleProcess = async () => {
     if (!canProcess) return;
+    
+    // Check limit right before processing (e.g. for pasted text where upload didn't happen)
+    if (!checkStorageLimit(!!pdfData)) return;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setProcessing(true);
     setError('');
@@ -764,6 +792,34 @@ export default function ImportScreen() {
               <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
               <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or paste text</Text>
               <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            </View>
+          )}
+
+          {/* ── Language ───────────────────────────────────── */}
+          {!pdfData && (
+            <View style={styles.field}>
+              <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Document Language</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                {['English', 'Spanish', 'French', 'German', 'Italian'].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    onPress={() => setLanguage(lang)}
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      borderRadius: 16,
+                      backgroundColor: language === lang ? colors.primary : colors.card,
+                      borderColor: language === lang ? colors.primary : colors.border,
+                      borderWidth: 1,
+                      marginRight: 8,
+                    }}
+                  >
+                    <Text style={{ color: language === lang ? '#FFF' : colors.foreground, fontWeight: '500' }}>
+                      {lang}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           )}
 

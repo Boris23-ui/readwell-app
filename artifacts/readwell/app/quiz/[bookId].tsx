@@ -64,7 +64,7 @@ export default function QuizScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, profile } = useApp();
+  const { getBookById, profile, consumeToken } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -102,12 +102,21 @@ export default function QuizScreen() {
       return;
     }
 
+    // Guard against out of tokens
+    if (profile.tokens <= 0) {
+      setLoadError('Out of Quiz Tokens. Read more to earn tokens or buy a refill in your profile!');
+      setLoadErrorCode('OUT_OF_TOKENS');
+      setLoading(false);
+      return;
+    }
+
     generateQuiz(segmentText, profile.readingLevel ?? 'intermediate')
       .then(data => {
         const q: Quiz = { questions: data.questions };
         setQuiz(q);
         setAnswers(new Array(data.questions.length).fill(null));
         setLoading(false);
+        consumeToken();
       })
       .catch(err => {
         console.error('Quiz generation error:', err);
@@ -149,20 +158,34 @@ export default function QuizScreen() {
 
   if (loadError || !quiz) {
     const isQualityError = loadError.startsWith('Text quality too low');
+    const isTokenError = loadErrorCode === 'OUT_OF_TOKENS';
     const isRetryableError =
       !isQualityError &&
+      !isTokenError &&
       RETRYABLE_QUIZ_ERROR_CODES.has(loadErrorCode ?? '');
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Feather
-          name={isQualityError ? 'alert-triangle' : 'alert-circle'}
+          name={isQualityError ? 'alert-triangle' : isTokenError ? 'lock' : 'alert-circle'}
           size={32}
-          color={isQualityError ? colors.mutedForeground : colors.destructive}
+          color={isQualityError ? colors.mutedForeground : isTokenError ? '#EAB308' : colors.destructive}
         />
         <Text style={[styles.errorTxt, { color: colors.foreground }]}>
           {loadError || 'Failed to load quiz'}
         </Text>
-        {isQualityError ? (
+        {isTokenError ? (
+          <>
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/profile')}
+              style={[styles.retryBtn, { backgroundColor: '#EAB308' }]}
+            >
+              <Text style={styles.retryBtnText}>Go to Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
+            </TouchableOpacity>
+          </>
+        ) : isQualityError ? (
           <>
             <TouchableOpacity
               onPress={() => {
@@ -201,7 +224,7 @@ export default function QuizScreen() {
                 }}
                 style={[styles.retryBtn, { backgroundColor: colors.primary }]}
               >
-                <Text style={styles.retryBtnText}>Try again</Text>
+                <Text style={styles.retryBtnText}>Regenerate Quiz</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={() => router.back()}>

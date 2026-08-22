@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile, Book, ReadingSession, DailyActivity, BadgeKey, Segment, Quiz } from '@/types';
+import { UserProfile, Book, ReadingSession, DailyActivity, BadgeKey, Segment, Quiz, UserProfileSchema, BookSchema } from '@/types';
 import { deletePdfPages } from '@/utils/api';
 import { runOrphanCleanup } from './orphanCleanup';
 import type { PendingPdfImport } from './orphanCleanup';
@@ -141,6 +141,7 @@ const DEFAULT_PROFILE: UserProfile = {
   onboardingComplete: false,
   totalMinutesRead: 0,
   totalBooksFinished: 0,
+  tokens: 15,
   createdAt: new Date().toISOString(),
 };
 
@@ -170,6 +171,8 @@ interface AppContextType {
    * book has been saved or the pages have been explicitly deleted).
    */
   clearPendingPdfImport: (serverBookId: string) => Promise<void>;
+  consumeToken: () => boolean;
+  addTokens: (amount: number) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -191,8 +194,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEYS.DAILY),
           AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_IMPORTS),
         ]);
-        if (pr) setProfile(JSON.parse(pr));
-        let savedBooks: Book[] = br ? JSON.parse(br) : [];
+        if (pr) {
+          const parsed = JSON.parse(pr);
+          const prResult = UserProfileSchema.safeParse(parsed);
+          if (prResult.success) {
+            setProfile(prResult.data as UserProfile);
+          } else {
+            console.warn('Profile data corrupted or invalid, sticking to default', prResult.error);
+          }
+        }
+
+        let savedBooks: Book[] = [];
+        if (br) {
+          const parsed = JSON.parse(br);
+          if (Array.isArray(parsed)) {
+            savedBooks = parsed.filter(b => {
+              const res = BookSchema.safeParse(b);
+              if (!res.success) {
+                console.warn(`Book ${b.id} data corrupted, filtering out`, res.error);
+                return false;
+              }
+              return true;
+            }) as Book[];
+          }
+        }
 
         // ── OCR backfill migration ──────────────────────────────────────────
         // Books imported before the ocrUsed flag was introduced will not have
@@ -276,7 +301,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = useCallback(async (partial: Partial<UserProfile>) => {
     setProfile(prev => {
       const updated = { ...prev, ...partial };
-      AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated));
+      AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
+      return updated;
+    });
+  }, []);
+
+  const consumeToken = useCallback((): boolean => {
+    let success = false;
+    setProfile(prev => {
+      if (prev.tokens > 0) {
+        success = true;
+        const updated = { ...prev, tokens: prev.tokens - 1 };
+        AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
+        return updated;
+      }
+      return prev;
+    });
+    return success;
+  }, []);
+
+  const addTokens = useCallback((amount: number) => {
+    setProfile(prev => {
+      const updated = { ...prev, tokens: prev.tokens + amount };
+      AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
       return updated;
     });
   }, []);
@@ -512,6 +559,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       addBook, updateBook, deleteBook, cacheSegmentQuiz,
       completeSession, getTodayActivity, getBookById,
       registerPendingPdfImport, clearPendingPdfImport,
+      consumeToken, addTokens,
     }}>
       {children}
     </AppContext.Provider>

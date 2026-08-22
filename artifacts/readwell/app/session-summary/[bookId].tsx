@@ -48,12 +48,13 @@ export default function SessionSummaryScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, updateBook, completeSession, profile } = useApp();
+  const { getBookById, updateBook, completeSession, profile, addTokens } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [newBadges, setNewBadges] = useState<BadgeKey[]>([]);
   const [sessionSaved, setSessionSaved] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
+  const [earnedToken, setEarnedToken] = useState(false);
 
   const xpAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -88,6 +89,11 @@ export default function SessionSummaryScreen() {
         comprehensionScore,
         xpEarned,
       }, { bookFinished: isLastSegment, isPerfectQuiz });
+
+      if (isPerfectQuiz) {
+        addTokens(1);
+        setEarnedToken(true);
+      }
 
       setNewBadges(result.newBadges);
       if (result.newBadges.length > 0 || profile.streakCurrent > 0) {
@@ -208,8 +214,16 @@ export default function SessionSummaryScreen() {
             <Animated.Text style={[styles.statVal, { color: '#8B5CF6' }]}>
               {xpEarned > 0 ? `+${xpEarned}` : '0'}
             </Animated.Text>
-            <Text style={[styles.statLbl, { color: '#8B5CF6' }]}>XP earned</Text>
+            <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>XP earned</Text>
           </View>
+          
+          {earnedToken && (
+            <View style={[styles.statCard, { backgroundColor: '#EAB30815', borderColor: '#EAB30840' }]}>
+              <Feather name="plus-circle" size={18} color="#EAB308" />
+              <Animated.Text style={[styles.statVal, { color: '#EAB308' }]}>+1</Animated.Text>
+              <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>quiz token</Text>
+            </View>
+          )}
         </View>
 
         {/* New badges */}

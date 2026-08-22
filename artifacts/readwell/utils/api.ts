@@ -17,6 +17,7 @@ export interface UploadProgress {
 export interface MultipartRequestOptions {
   signal?: AbortSignal;
   onProgress?: (progress: UploadProgress) => void;
+  language?: string;
 }
 
 function createAbortError(): Error {
@@ -58,6 +59,9 @@ function requestMultipartJson<T>(
     }
 
     appendFile(formData, 'file', file);
+    if (options.language) {
+      formData.append('language', options.language);
+    }
     xhr.open('POST', url);
     xhr.timeout = 5 * 60 * 1000;
     xhr.responseType = 'text';

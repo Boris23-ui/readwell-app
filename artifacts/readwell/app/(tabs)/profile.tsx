@@ -20,7 +20,7 @@ const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60];
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { profile, updateProfile } = useApp();
+  const { profile, updateProfile, addTokens } = useApp();
   const [showGoalPicker, setShowGoalPicker] = useState(false);
 
   const xpProgress = getXpProgressInLevel(profile.xp);
@@ -84,6 +84,11 @@ export default function ProfileScreen() {
         <View style={styles.statItem}>
           <Text style={[styles.statNum, { color: '#22C55E' }]}>{profile.totalBooksFinished}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>finished</Text>
+        </View>
+        <View style={[styles.vDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statNum, { color: '#EAB308' }]}>{profile.tokens}</Text>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>tokens</Text>
         </View>
       </View>
 
@@ -153,6 +158,26 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
+
+        <View style={[styles.separator, { backgroundColor: colors.border }]} />
+
+        {/* Mock Refill Tokens */}
+        <TouchableOpacity
+          style={styles.settingRow}
+          onPress={() => addTokens(10)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: '#EAB30815' }]}>
+            <Feather name="plus-circle" size={18} color="#EAB308" />
+          </View>
+          <View style={styles.settingLabel}>
+            <Text style={[styles.settingTitle, { color: colors.foreground }]}>Refill Tokens (Mock)</Text>
+            <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>
+              Add 10 tokens for testing
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+        </TouchableOpacity>
 
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
 

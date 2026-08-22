@@ -177,6 +177,18 @@ function assertPdfRequestActive(req: Request, clientAborted: boolean): void {
 // saved book before this time, or explicitly deleted by the client.
 const PDF_PAGES_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+const OCR_LANGUAGES: Record<string, string> = {
+  'english': 'eng',
+  'spanish': 'spa',
+  'french': 'fra',
+  'german': 'deu',
+  'italian': 'ita',
+  'portuguese': 'por',
+  'russian': 'rus',
+  'chinese': 'chi_sim',
+  'japanese': 'jpn',
+};
+
 router.post("/render-pdf", upload.single("file"), async (req, res) => {
   let clientAborted = req.aborted;
   const onRequestAborted = () => {
@@ -204,7 +216,10 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
   const workDir = path.join(os.tmpdir(), `pdf-${randomUUID()}`);
   const bookId = randomUUID();
 
-  logger.info({ filename: originalname, size: buffer.length }, "Rendering PDF pages");
+  const reqLang = req.body.language?.toLowerCase() ?? 'english';
+  const tesseractLang = OCR_LANGUAGES[reqLang] || 'eng';
+
+  logger.info({ filename: originalname, size: buffer.length, language: tesseractLang }, "Rendering PDF pages");
 
   try {
     assertPdfRequestActive(req, clientAborted);
@@ -286,7 +301,7 @@ router.post("/render-pdf", upload.single("file"), async (req, res) => {
         try {
           const { stdout: ocrOut } = await execFileAsync(
             "tesseract",
-            [imgPath, "stdout", "-l", "eng", "--psm", "1"],
+            [imgPath, "stdout", "-l", tesseractLang, "--psm", "1"],
             { maxBuffer: 1024 * 1024 * 8 },
           );
           const ocrText = sanitizeOcrText(ocrOut.replace(/\r/g, "").trim());

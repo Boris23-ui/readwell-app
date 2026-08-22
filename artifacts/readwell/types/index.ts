@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export interface UserProfile {
   name: string;
   ageGroup: 'teen' | 'adult';
@@ -13,8 +15,28 @@ export interface UserProfile {
   onboardingComplete: boolean;
   totalMinutesRead: number;
   totalBooksFinished: number;
+  tokens: number;
   createdAt: string;
 }
+
+export const UserProfileSchema = z.object({
+  name: z.string(),
+  ageGroup: z.enum(['teen', 'adult']),
+  readingLevel: z.enum(['beginner', 'intermediate', 'advanced']),
+  interests: z.array(z.string()),
+  dailyGoalMinutes: z.number(),
+  xp: z.number(),
+  level: z.number(),
+  streakCurrent: z.number(),
+  streakBest: z.number(),
+  lastReadDate: z.string().nullable(),
+  badges: z.array(z.string()),
+  onboardingComplete: z.boolean(),
+  totalMinutesRead: z.number(),
+  totalBooksFinished: z.number(),
+  tokens: z.number().default(15).catch(15),
+  createdAt: z.string(),
+}).passthrough();
 
 export type BadgeKey =
   | 'first-book'
@@ -98,6 +120,22 @@ export interface Question {
   evidenceQuote?: string;
   isOpenEnded: boolean;
 }
+
+export const BookSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  author: z.string(),
+  content: z.string(),
+  segments: z.array(z.any()), // skipping deep validation for simplicity on segments
+  status: z.enum(['in_progress', 'finished']),
+  createdAt: z.string(),
+  wordCount: z.number(),
+  currentSegmentIndex: z.number(),
+  coverColor: z.string(),
+  sourceType: z.enum(['text', 'pdf']).optional(),
+  pages: z.array(z.any()).optional(),
+  ocrUsed: z.boolean().nullable().optional(),
+}).passthrough();
 
 export interface ReadingSession {
   id: string;
