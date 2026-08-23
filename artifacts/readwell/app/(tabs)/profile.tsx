@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
-import { useApp } from '@/context/AppContext';
+import { useApp } from '@/context/CloudAppContext';
 import { getXpProgressInLevel } from '@/utils/xp';
 
 const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60];

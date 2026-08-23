@@ -82,6 +82,7 @@ overrides:
   esbuild: "0.27.3"
 
 allowBuilds:
+  '@firebase/util': false
   '@google/genai': set this to true or false
   esbuild: set this to true or false
   protobufjs: set this to true or false

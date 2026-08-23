@@ -23,6 +23,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: 'chart.bar', selected: 'chart.bar.fill' }} />
         <Label>Stats</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="leaderboard">
+        <Icon sf={{ default: 'list.number', selected: 'list.number' }} />
+        <Label>Rank</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: 'person.circle', selected: 'person.circle.fill' }} />
         <Label>Profile</Label>
@@ -97,6 +101,18 @@ function ClassicTabLayout() {
               <SymbolView name="chart.bar" tintColor={color} size={24} />
             ) : (
               <Feather name="bar-chart-2" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: 'Rank',
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="list.number" tintColor={color} size={24} />
+            ) : (
+              <Feather name="award" size={22} color={color} />
             ),
         }}
       />

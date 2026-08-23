@@ -15,7 +15,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
-import { useApp } from '@/context/AppContext';
+import { useApp } from '@/context/CloudAppContext';
 import { generateQuiz } from '@/utils/api';
 import { Question, Quiz } from '@/types';
 import { calculateSessionXp } from '@/utils/xp';

@@ -15,7 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
-import { useApp } from '@/context/AppContext';
+import { useApp } from '@/context/CloudAppContext';
 import PdfReader from '@/components/PdfReader';
 
 export default function ReaderScreen() {

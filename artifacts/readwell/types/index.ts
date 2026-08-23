@@ -7,6 +7,7 @@ export interface UserProfile {
   interests: string[];
   dailyGoalMinutes: number;
   xp: number;
+  xpDomains: Record<string, number>;
   level: number;
   streakCurrent: number;
   streakBest: number;
@@ -26,6 +27,7 @@ export const UserProfileSchema = z.object({
   interests: z.array(z.string()),
   dailyGoalMinutes: z.number(),
   xp: z.number(),
+  xpDomains: z.record(z.number()).default({ general: 0, fiction: 0, technical: 0, science: 0 }),
   level: z.number(),
   streakCurrent: z.number(),
   streakBest: z.number(),

@@ -1,5 +1,5 @@
 import { Redirect } from 'expo-router';
-import { useApp } from '@/context/AppContext';
+import { useApp } from '@/context/CloudAppContext';
 import { View, ActivityIndicator } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 
