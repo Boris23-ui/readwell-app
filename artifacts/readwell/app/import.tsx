@@ -357,7 +357,7 @@ function FileBadge({
 export default function ImportScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addBook, registerPendingPdfImport, clearPendingPdfImport } = useApp();
+  const { books, addBook, registerPendingPdfImport, clearPendingPdfImport } = useApp();
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');

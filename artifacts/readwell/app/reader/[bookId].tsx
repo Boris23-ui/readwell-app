@@ -17,15 +17,18 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import PdfReader from '@/components/PdfReader';
+import { simplifyText } from '@/utils/api';
 
 export default function ReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, updateBook } = useApp();
+  const { getBookById, updateBook, consumeToken } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [showFinishCard, setShowFinishCard] = useState(false);
+  const [isSimplifying, setIsSimplifying] = useState(false);
+  const [simplifiedText, setSimplifiedText] = useState<string | null>(null);
   const [sessionStart] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -81,6 +84,27 @@ export default function ReaderScreen() {
       damping: 15,
       stiffness: 150,
     }).start();
+  };
+
+  const handleSimplify = async () => {
+    if (!segment) return;
+    
+    if (!consumeToken()) {
+      Alert.alert('Not enough tokens', 'You need at least 1 token to simplify this section.');
+      return;
+    }
+
+    try {
+      setIsSimplifying(true);
+      const combinedText = segment.paragraphs.join(' ');
+      const res = await simplifyText(combinedText, 'beginner');
+      setSimplifiedText(res.text);
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to simplify text.');
+    } finally {
+      setIsSimplifying(false);
+    }
   };
 
   const handleTakeQuiz = () => {
@@ -168,11 +192,39 @@ export default function ReaderScreen() {
           </Text>
         </View>
 
-        {segment.paragraphs.map((para, i) => (
-          <Text key={i} style={[styles.paragraph, { color: colors.foreground }]}>
-            {para}
-          </Text>
-        ))}
+        {simplifiedText ? (
+          <View style={[styles.simplifiedContainer, { backgroundColor: `${book.coverColor}10` }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6 }}>
+              <Feather name="zap" size={16} color={book.coverColor} />
+              <Text style={[styles.simplifiedHeader, { color: book.coverColor }]}>AI Simplified Version</Text>
+            </View>
+            <Text style={[styles.paragraph, { color: colors.foreground }]}>{simplifiedText}</Text>
+            <TouchableOpacity onPress={() => setSimplifiedText(null)} style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+              <Text style={{ color: colors.primary, fontFamily: 'Inter_500Medium' }}>Return to Original</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          segment.paragraphs.map((para, i) => (
+            <Text key={i} style={[styles.paragraph, { color: colors.foreground }]}>
+              {para}
+            </Text>
+          ))
+        )}
+
+        {/* Simplify Button */}
+        {!showFinishCard && !simplifiedText && (
+          <TouchableOpacity
+            onPress={handleSimplify}
+            style={[styles.simplifyBtn, { borderColor: book.coverColor }]}
+            activeOpacity={0.7}
+            disabled={isSimplifying}
+          >
+            <Feather name="zap" size={16} color={book.coverColor} />
+            <Text style={[styles.simplifyBtnText, { color: book.coverColor }]}>
+              {isSimplifying ? 'Simplifying...' : 'Simplify Section (Cost: 1 Token)'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* End of segment */}
         {!showFinishCard && (
@@ -278,6 +330,29 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     marginBottom: 22,
     letterSpacing: 0.1,
+  },
+  simplifiedContainer: {
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 24,
+  },
+  simplifiedHeader: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  simplifyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  simplifyBtnText: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
   },
   doneBtn: {
     flexDirection: 'row',

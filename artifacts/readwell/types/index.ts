@@ -18,6 +18,9 @@ export interface UserProfile {
   totalBooksFinished: number;
   tokens: number;
   createdAt: string;
+  role?: 'learner' | 'sponsor';
+  sponsorId?: string | null;
+  allocatedTokens?: number;
 }
 
 export const UserProfileSchema = z.object({
@@ -38,6 +41,9 @@ export const UserProfileSchema = z.object({
   totalBooksFinished: z.number(),
   tokens: z.number().default(15).catch(15),
   createdAt: z.string(),
+  role: z.enum(['learner', 'sponsor']).optional(),
+  sponsorId: z.string().nullable().optional(),
+  allocatedTokens: z.number().optional(),
 }).passthrough();
 
 export type BadgeKey =
@@ -154,4 +160,13 @@ export interface DailyActivity {
   minutesRead: number;
   xpEarned: number;
   goalMet: boolean;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  text: string;
+  createdAt: string; // ISO date string
+  read: boolean;
 }

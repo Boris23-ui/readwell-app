@@ -117,7 +117,7 @@ function getBaseUrl(): string {
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
       (window.location.port === '8081' || window.location.port === '19006' || window.location.port === '8082')
     ) {
-      return 'http://localhost:5001';
+      return 'http://localhost:3000';
     }
     return window.location.origin;
   }
@@ -196,6 +196,24 @@ export async function generateQuiz(
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const error = new Error((err as any).error ?? 'Failed to generate quiz') as Error & { code?: string };
+    error.code = (err as any).code;
+    throw error;
+  }
+  return response.json();
+}
+
+export async function simplifyText(
+  segmentText: string,
+  targetLevel: string,
+): Promise<{ text: string }> {
+  const response = await fetch(`${getBaseUrl()}/api/simplify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ segmentText, targetLevel }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const error = new Error((err as any).error ?? 'Failed to simplify text') as Error & { code?: string };
     error.code = (err as any).code;
     throw error;
   }
