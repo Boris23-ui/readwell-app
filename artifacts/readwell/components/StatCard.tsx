@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
   value: {
     fontSize: 26,
     fontWeight: '700',
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Newsreader_700Bold',
   },
   label: {
     fontSize: 12,

@@ -57,10 +57,12 @@ export default function QuizScreen() {
     bookId: string;
     segmentIndex: string;
     secondsRead: string;
+    wordCount: string;
   }>();
-  const { bookId, segmentIndex: segIdxStr, secondsRead: secondsStr } = params;
+  const { bookId, segmentIndex: segIdxStr, secondsRead: secondsStr, wordCount: wordCountStr } = params;
   const segmentIndex = parseInt(segIdxStr ?? '0', 10);
   const secondsRead = parseInt(secondsStr ?? '0', 10);
+  const wordCount = parseInt(wordCountStr ?? '0', 10);
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -110,7 +112,11 @@ export default function QuizScreen() {
       return;
     }
 
-    generateQuiz(segmentText, profile.readingLevel ?? 'intermediate')
+    // Pass ML inputs: elo, secondsRead, wordCount, complexity
+    const elo = profile.elo ?? 1200;
+    const complexity = book.complexityIndex || 1.0;
+    
+    generateQuiz(segmentText, profile.readingLevel ?? 'intermediate', elo, secondsRead, wordCount, complexity)
       .then(data => {
         const q: Quiz = { questions: data.questions };
         setQuiz(q);
@@ -200,6 +206,7 @@ export default function QuizScreen() {
                     total: '0',
                     xpEarned: String(xpEarned),
                     secondsRead: String(secondsRead),
+                    complexityIndex: '1.0',
                   },
                 });
               }}
@@ -281,6 +288,7 @@ export default function QuizScreen() {
           total: String(totalQ),
           xpEarned: String(xpEarned),
           secondsRead: String(secondsRead),
+          complexityIndex: String(quiz.complexityIndex || 1.0),
         },
       });
       return;
@@ -500,7 +508,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 20, gap: 16 },
   typeTag: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8, marginBottom: 8 },
   typeTagText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', textTransform: 'uppercase', letterSpacing: 0.5 },
-  questionText: { fontSize: 20, fontFamily: 'Inter_700Bold', lineHeight: 30, marginBottom: 16 },
+  questionText: { fontSize: 20, fontFamily: 'Newsreader_700Bold', lineHeight: 30, marginBottom: 16 },
   options: { gap: 10 },
   option: {
     flexDirection: 'row',
@@ -511,7 +519,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   optionLetter: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  optionLetterText: { fontSize: 13, fontFamily: 'Inter_700Bold' },
+  optionLetterText: { fontSize: 13, fontFamily: 'Newsreader_700Bold' },
   optionText: { flex: 1, fontSize: 15, fontFamily: 'Inter_400Regular', lineHeight: 21 },
   freeText: {
     borderWidth: 1.5,

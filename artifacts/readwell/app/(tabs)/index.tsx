@@ -12,16 +12,39 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import { ProgressRing } from '@/components/ProgressRing';
 import { BookCard } from '@/components/BookCard';
 import { getXpProgressInLevel } from '@/utils/xp';
+import { fetchRecommendations } from '@/utils/api';
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { profile, books, getTodayActivity } = useApp();
+  const [recommendations, setRecommendations] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const loadRecs = async () => {
+      try {
+        const res = await fetchRecommendations({
+          elo: profile.xp,
+          readingLevel: profile.readingLevel,
+          interests: profile.interests,
+        });
+        if (mounted && res.recommendations) {
+          setRecommendations(res.recommendations);
+        }
+      } catch (err) {
+        console.warn("Failed to load recommendations", err);
+      }
+    };
+    loadRecs();
+    return () => { mounted = false; };
+  }, [profile.xp, profile.readingLevel, profile.interests]);
 
   const todayActivity = getTodayActivity();
   const todayMinutes = todayActivity?.minutesRead ?? 0;
@@ -55,51 +78,57 @@ export default function HomeScreen() {
       {/* Streak + Goal row */}
       <View style={styles.statsRow}>
         {/* Streak card */}
-        <LinearGradient
-          colors={profile.streakCurrent > 0 ? ['#EF4444', '#F97316'] : [colors.card, colors.card]}
-          style={[styles.streakCard, { borderColor: profile.streakCurrent > 0 ? '#EF444460' : colors.border }]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <Feather name="zap" size={22} color={profile.streakCurrent > 0 ? '#FFF' : colors.mutedForeground} />
-          <Text style={[styles.streakNum, { color: profile.streakCurrent > 0 ? '#FFF' : colors.foreground }]}>
-            {profile.streakCurrent}
-          </Text>
-          <Text style={[styles.streakLabel, { color: profile.streakCurrent > 0 ? '#FFF9' : colors.mutedForeground }]}>
-            day streak
-          </Text>
-        </LinearGradient>
+        <Animated.View style={{ flex: 1.1 }} entering={FadeInDown.delay(100).springify()}>
+          <LinearGradient
+            colors={profile.streakCurrent > 0 ? ['#EF4444', '#F97316'] : [colors.card, colors.card]}
+            style={[styles.streakCard, { borderColor: profile.streakCurrent > 0 ? '#EF444460' : colors.border }]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Feather name="zap" size={26} color={profile.streakCurrent > 0 ? '#FFF' : colors.mutedForeground} />
+            <Text style={[styles.streakNum, { color: profile.streakCurrent > 0 ? '#FFF' : colors.foreground }]}>
+              {profile.streakCurrent}
+            </Text>
+            <Text style={[styles.streakLabel, { color: profile.streakCurrent > 0 ? '#FFF9' : colors.mutedForeground }]}>
+              day streak
+            </Text>
+          </LinearGradient>
+        </Animated.View>
 
         {/* Daily goal ring */}
-        <View style={[styles.goalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <ProgressRing
-            progress={goalProgress}
-            size={76}
-            strokeWidth={7}
-            color={colors.primary}
-            trackColor={colors.muted}
-          >
-            <View style={styles.ringCenter}>
-              <Text style={[styles.ringMin, { color: colors.foreground }]}>{todayMinutes}</Text>
-              <Text style={[styles.ringLabel, { color: colors.mutedForeground }]}>min</Text>
-            </View>
-          </ProgressRing>
-          <Text style={[styles.goalLabel, { color: colors.mutedForeground }]}>
-            Goal: {profile.dailyGoalMinutes}m
-          </Text>
-        </View>
+        <Animated.View style={{ flex: 1.3 }} entering={FadeInDown.delay(200).springify()}>
+          <View style={[styles.goalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <ProgressRing
+              progress={goalProgress}
+              size={84}
+              strokeWidth={8}
+              color={colors.primary}
+              trackColor={colors.muted}
+            >
+              <View style={styles.ringCenter}>
+                <Text style={[styles.ringMin, { color: colors.foreground }]}>{todayMinutes}</Text>
+                <Text style={[styles.ringLabel, { color: colors.mutedForeground }]}>min</Text>
+              </View>
+            </ProgressRing>
+            <Text style={[styles.goalLabel, { color: colors.mutedForeground }]}>
+              Goal: {profile.dailyGoalMinutes}m
+            </Text>
+          </View>
+        </Animated.View>
 
         {/* XP card */}
-        <View style={[styles.xpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.xpNum, { color: '#8B5CF6' }]}>{profile.xp}</Text>
-          <Text style={[styles.xpLabel, { color: colors.mutedForeground }]}>total XP</Text>
-          <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
-            <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
+        <Animated.View style={{ flex: 1.1 }} entering={FadeInDown.delay(300).springify()}>
+          <View style={[styles.xpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.xpNum, { color: '#8B5CF6' }]}>{profile.xp}</Text>
+            <Text style={[styles.xpLabel, { color: colors.mutedForeground }]}>total XP</Text>
+            <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
+              <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
+            </View>
+            <Text style={[styles.xpNext, { color: colors.mutedForeground }]}>
+              {xpProgress.required - xpProgress.current} to next
+            </Text>
           </View>
-          <Text style={[styles.xpNext, { color: colors.mutedForeground }]}>
-            {xpProgress.required - xpProgress.current} to next
-          </Text>
-        </View>
+        </Animated.View>
       </View>
 
       {/* Continue reading */}
@@ -108,62 +137,85 @@ export default function HomeScreen() {
           {latestBook ? 'Continue reading' : 'Start reading'}
         </Text>
         {latestBook ? (
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(`/reader/${latestBook.id}`);
-            }}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={[`${latestBook.coverColor}30`, `${latestBook.coverColor}10`]}
-              style={[styles.continueCard, { borderColor: `${latestBook.coverColor}40` }]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
+          <Animated.View entering={FadeInRight.delay(400).springify()}>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/reader/${latestBook.id}`);
+              }}
+              activeOpacity={0.85}
             >
-              <View style={[styles.bookSpine, { backgroundColor: latestBook.coverColor }]}>
-                <Text style={styles.spineInitial}>{latestBook.title[0]?.toUpperCase()}</Text>
-              </View>
-              <View style={styles.continueInfo}>
-                <Text style={[styles.continueTitle, { color: colors.foreground }]} numberOfLines={2}>
-                  {latestBook.title}
-                </Text>
-                <Text style={[styles.continueAuthor, { color: colors.mutedForeground }]}>
-                  {latestBook.author || 'Unknown Author'}
-                </Text>
-                <Text style={[styles.continueProgress, { color: colors.mutedForeground }]}>
-                  {(() => {
-                    if (latestBook.sourceType === 'pdf' && latestBook.pages) {
-                      const seg = latestBook.segments[latestBook.currentSegmentIndex];
-                      const totalPages = latestBook.pages.length;
-                      const currentPage = seg?.pageStart ?? 1;
-                      return `Page ${currentPage} of ${totalPages}`;
-                    }
-                    return `Section ${latestBook.currentSegmentIndex + 1} of ${latestBook.segments.length}`;
-                  })()}
-                </Text>
-              </View>
-              <View style={[styles.continueBtn, { backgroundColor: latestBook.coverColor }]}>
-                <Feather name="play" size={16} color="#FFF" />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              <LinearGradient
+                colors={[`${latestBook.coverColor}15`, `${latestBook.coverColor}05`]}
+                style={[styles.continueCard, { borderColor: `${latestBook.coverColor}30` }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={[styles.bookSpine, { backgroundColor: latestBook.coverColor }]}>
+                  <Text style={styles.spineInitial}>{latestBook.title[0]?.toUpperCase()}</Text>
+                </View>
+                <View style={styles.continueInfo}>
+                  <Text style={[styles.continueTitle, { color: colors.foreground }]} numberOfLines={2}>
+                    {latestBook.title}
+                  </Text>
+                  <Text style={[styles.continueAuthor, { color: colors.mutedForeground }]}>
+                    {latestBook.author || 'Unknown Author'}
+                  </Text>
+                  <Text style={[styles.continueProgress, { color: colors.mutedForeground }]}>
+                    {(() => {
+                      if (latestBook.sourceType === 'pdf' && latestBook.pages) {
+                        const seg = latestBook.segments[latestBook.currentSegmentIndex];
+                        const totalPages = latestBook.pages.length;
+                        const currentPage = seg?.pageStart ?? 1;
+                        return `Page ${currentPage} of ${totalPages}`;
+                      }
+                      return `Section ${latestBook.currentSegmentIndex + 1} of ${latestBook.segments.length}`;
+                    })()}
+                  </Text>
+                </View>
+                <View style={[styles.continueBtn, { backgroundColor: latestBook.coverColor }]}>
+                  <Feather name="play" size={18} color="#FFF" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
         ) : (
-          <TouchableOpacity
-            onPress={() => router.push('/import')}
-            style={[styles.addBookCard, { backgroundColor: colors.card, borderColor: colors.border, borderStyle: 'dashed' }]}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.addIconCircle, { backgroundColor: `${colors.primary}15` }]}>
-              <Feather name="plus" size={24} color={colors.primary} />
-            </View>
-            <Text style={[styles.addBookText, { color: colors.foreground }]}>Add your first book</Text>
-            <Text style={[styles.addBookSub, { color: colors.mutedForeground }]}>
-              Import a PDF or paste text to start reading
-            </Text>
-          </TouchableOpacity>
+          <Animated.View entering={FadeInRight.delay(400).springify()}>
+            <TouchableOpacity
+              onPress={() => router.push('/import')}
+              style={[styles.addBookCard, { backgroundColor: colors.card, borderColor: colors.border, borderStyle: 'dashed' }]}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.addIconCircle, { backgroundColor: `${colors.primary}15` }]}>
+                <Feather name="plus" size={24} color={colors.primary} />
+              </View>
+              <Text style={[styles.addBookText, { color: colors.foreground }]}>Add your first book</Text>
+              <Text style={[styles.addBookSub, { color: colors.mutedForeground }]}>
+                Import a PDF or paste text to start reading
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
         )}
       </View>
+
+      {/* AI Recommendations */}
+      {recommendations.length > 0 && (
+        <Animated.View entering={FadeInDown.delay(500).springify()} style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Recommended for you</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+            {recommendations.map((rec, i) => (
+              <View key={i} style={[styles.recCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.recIconWrap, { backgroundColor: `${colors.primary}15` }]}>
+                  <Feather name="star" size={20} color={colors.primary} />
+                </View>
+                <Text style={[styles.recTitle, { color: colors.foreground }]} numberOfLines={2}>{rec.title}</Text>
+                <Text style={[styles.recTopic, { color: colors.primary }]}>{rec.topic}</Text>
+                <Text style={[styles.recReason, { color: colors.mutedForeground }]} numberOfLines={3}>{rec.reason}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
 
       {/* Recent books list */}
       {currentBooks.length > 1 && (
@@ -186,36 +238,86 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 24 },
   greeting: { fontSize: 14, fontFamily: 'Inter_400Regular' },
-  name: { fontSize: 24, fontFamily: 'Inter_700Bold', marginTop: 2 },
+  name: { fontSize: 24, fontFamily: 'Newsreader_700Bold', marginTop: 2 },
   levelBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
   levelText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
-  statsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 28 },
-  streakCard: { flex: 1.1, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 2 },
-  streakNum: { fontSize: 28, fontFamily: 'Inter_700Bold', lineHeight: 34 },
-  streakLabel: { fontSize: 11, fontFamily: 'Inter_400Regular' },
-  goalCard: { flex: 1.3, borderRadius: 16, borderWidth: 1, padding: 12, alignItems: 'center', gap: 6 },
+  statsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 32 },
+  streakCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  streakNum: { fontSize: 32, fontFamily: 'Newsreader_700Bold', lineHeight: 38 },
+  streakLabel: { fontSize: 12, fontFamily: 'Inter_500Medium' },
+  goalCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
   ringCenter: { alignItems: 'center' },
-  ringMin: { fontSize: 18, fontFamily: 'Inter_700Bold' },
-  ringLabel: { fontSize: 10, fontFamily: 'Inter_400Regular', marginTop: -2 },
-  goalLabel: { fontSize: 11, fontFamily: 'Inter_400Regular' },
-  xpCard: { flex: 1.1, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 2 },
-  xpNum: { fontSize: 22, fontFamily: 'Inter_700Bold' },
-  xpLabel: { fontSize: 11, fontFamily: 'Inter_400Regular' },
-  xpTrack: { width: '100%', height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 4 },
-  xpFill: { height: 4, backgroundColor: '#8B5CF6', borderRadius: 2 },
-  xpNext: { fontSize: 10, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  section: { paddingHorizontal: 20, marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontFamily: 'Inter_700Bold', marginBottom: 14 },
-  continueCard: { borderRadius: 18, borderWidth: 1, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  bookSpine: { width: 48, height: 64, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  spineInitial: { fontSize: 22, fontFamily: 'Inter_700Bold', color: '#FFF' },
-  continueInfo: { flex: 1, gap: 3 },
-  continueTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', lineHeight: 22 },
-  continueAuthor: { fontSize: 13, fontFamily: 'Inter_400Regular' },
-  continueProgress: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 4 },
-  continueBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  ringMin: { fontSize: 20, fontFamily: 'Newsreader_700Bold' },
+  ringLabel: { fontSize: 11, fontFamily: 'Inter_500Medium', marginTop: -4 },
+  goalLabel: { fontSize: 12, fontFamily: 'Inter_500Medium' },
+  xpCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'center',
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  xpNum: { fontSize: 24, fontFamily: 'Newsreader_700Bold' },
+  xpLabel: { fontSize: 12, fontFamily: 'Inter_500Medium' },
+  xpTrack: { width: '100%', height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 6 },
+  xpFill: { height: 6, backgroundColor: '#8B5CF6', borderRadius: 3 },
+  xpNext: { fontSize: 11, fontFamily: 'Inter_400Regular', textAlign: 'center', marginTop: 2 },
+  section: { paddingHorizontal: 20, marginBottom: 28 },
+  sectionTitle: { fontSize: 20, fontFamily: 'Newsreader_700Bold', marginBottom: 16 },
+  continueCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  bookSpine: { width: 54, height: 74, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  spineInitial: { fontSize: 26, fontFamily: 'Newsreader_700Bold', color: '#FFF' },
+  continueInfo: { flex: 1, gap: 4 },
+  continueTitle: { fontSize: 17, fontFamily: 'Newsreader_700Bold', lineHeight: 24 },
+  continueAuthor: { fontSize: 14, fontFamily: 'Inter_500Medium' },
+  continueProgress: { fontSize: 13, fontFamily: 'Inter_500Medium', marginTop: 4 },
+  continueBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 2 },
   addBookCard: { borderRadius: 18, borderWidth: 1.5, padding: 28, alignItems: 'center', gap: 10 },
   addIconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   addBookText: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
   addBookSub: { fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 18 },
+  recCard: { width: 220, padding: 16, borderRadius: 20, borderWidth: 1, gap: 6 },
+  recIconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  recTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', lineHeight: 20 },
+  recTopic: { fontSize: 12, fontFamily: 'Inter_600SemiBold', textTransform: 'uppercase' },
+  recReason: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18, marginTop: 4 },
 });

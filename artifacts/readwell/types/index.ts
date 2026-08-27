@@ -9,6 +9,7 @@ export interface UserProfile {
   xp: number;
   xpDomains: Record<string, number>;
   level: number;
+  elo: number;
   streakCurrent: number;
   streakBest: number;
   lastReadDate: string | null;
@@ -32,6 +33,7 @@ export const UserProfileSchema = z.object({
   xp: z.number(),
   xpDomains: z.record(z.number()).default({ general: 0, fiction: 0, technical: 0, science: 0 }),
   level: z.number(),
+  elo: z.number().default(100).catch(100),
   streakCurrent: z.number(),
   streakBest: z.number(),
   lastReadDate: z.string().nullable(),
@@ -118,6 +120,7 @@ export interface Segment {
 
 export interface Quiz {
   questions: Question[];
+  complexityIndex: number;
 }
 
 export interface Question {
@@ -153,6 +156,7 @@ export interface ReadingSession {
   segmentsCompleted: number;
   comprehensionScore: number;
   xpEarned: number;
+  eloEarned?: number;
 }
 
 export interface DailyActivity {
@@ -166,7 +170,9 @@ export interface Message {
   id: string;
   senderId: string;
   receiverId: string;
+  participants: string[]; // [senderId, receiverId] for easy querying
   text: string;
   createdAt: string; // ISO date string
+  expiresAt: string; // ISO date string (24 hours after createdAt)
   read: boolean;
 }

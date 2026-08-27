@@ -9,6 +9,7 @@ import {
   Platform,
   Switch,
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp, ZoomIn, Layout } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
@@ -43,7 +44,7 @@ export default function ProfileScreen() {
       showsVerticalScrollIndicator={false}
     >
       {/* Profile hero */}
-      <View style={styles.hero}>
+      <Animated.View entering={ZoomIn.springify()} layout={Layout.springify()} style={styles.hero}>
         <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
           <Text style={styles.avatarInitials}>{initials}</Text>
         </View>
@@ -51,10 +52,10 @@ export default function ProfileScreen() {
         <View style={[styles.levelBadge, { backgroundColor: `${colors.primary}20`, borderColor: colors.primary }]}>
           <Text style={[styles.levelText, { color: colors.primary }]}>Level {profile.level}</Text>
         </View>
-      </View>
+      </Animated.View>
 
       {/* XP bar */}
-      <View style={[styles.section, styles.xpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Animated.View entering={FadeInDown.delay(100).springify()} layout={Layout.springify()} style={[styles.section, styles.xpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.xpHeader}>
           <Text style={[styles.xpLabel, { color: colors.foreground }]}>XP Progress</Text>
           <Text style={[styles.xpValue, { color: colors.primary }]}>
@@ -67,10 +68,10 @@ export default function ProfileScreen() {
         <Text style={[styles.xpSub, { color: colors.mutedForeground }]}>
           {xpProgress.required - xpProgress.current} XP until Level {profile.level + 1}
         </Text>
-      </View>
+      </Animated.View>
 
       {/* Stats summary */}
-      <View style={[styles.section, styles.statsGrid, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Animated.View entering={FadeInDown.delay(200).springify()} layout={Layout.springify()} style={[styles.section, styles.statsGrid, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.statItem}>
           <Text style={[styles.statNum, { color: colors.primary }]}>{profile.totalMinutesRead}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>min read</Text>
@@ -90,14 +91,14 @@ export default function ProfileScreen() {
           <Text style={[styles.statNum, { color: '#EAB308' }]}>{profile.tokens}</Text>
           <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>tokens</Text>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Settings */}
-      <View style={styles.sectionHeader}>
+      <Animated.View entering={FadeInUp.delay(300).springify()} layout={Layout.springify()} style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Settings</Text>
-      </View>
+      </Animated.View>
 
-      <View style={[styles.section, styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Animated.View entering={FadeInUp.delay(350).springify()} layout={Layout.springify()} style={[styles.section, styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         {/* Daily goal */}
         <TouchableOpacity
           style={styles.settingRow}
@@ -193,14 +194,14 @@ export default function ProfileScreen() {
             </Text>
           </View>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Member since */}
-      <View style={styles.section}>
+      <Animated.View entering={FadeInUp.delay(400).springify()} layout={Layout.springify()} style={styles.section}>
         <Text style={[styles.memberText, { color: colors.mutedForeground }]}>
           Member since {new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
         </Text>
-      </View>
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -209,8 +210,8 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   hero: { alignItems: 'center', paddingHorizontal: 20, paddingBottom: 24, gap: 10 },
   avatar: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
-  avatarInitials: { fontSize: 30, fontFamily: 'Inter_700Bold', color: '#FFF' },
-  profileName: { fontSize: 22, fontFamily: 'Inter_700Bold' },
+  avatarInitials: { fontSize: 30, fontFamily: 'Newsreader_700Bold', color: '#FFF' },
+  profileName: { fontSize: 22, fontFamily: 'Newsreader_700Bold' },
   levelBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
   levelText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
   section: { marginHorizontal: 20, marginBottom: 16 },
@@ -223,11 +224,11 @@ const styles = StyleSheet.create({
   xpSub: { fontSize: 12, fontFamily: 'Inter_400Regular' },
   statsGrid: { borderRadius: 18, borderWidth: 1, padding: 18, flexDirection: 'row', alignItems: 'center' },
   statItem: { flex: 1, alignItems: 'center', gap: 4 },
-  statNum: { fontSize: 26, fontFamily: 'Inter_700Bold' },
+  statNum: { fontSize: 26, fontFamily: 'Newsreader_700Bold' },
   statLabel: { fontSize: 12, fontFamily: 'Inter_400Regular' },
   vDivider: { width: 1, height: 40 },
   sectionHeader: { paddingHorizontal: 20, marginBottom: 10 },
-  sectionTitle: { fontSize: 18, fontFamily: 'Inter_700Bold' },
+  sectionTitle: { fontSize: 18, fontFamily: 'Newsreader_700Bold' },
   settingsCard: { borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
   settingRow: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
   settingIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },

@@ -11,6 +11,7 @@ export interface Question {
 
 export interface GenerateQuizResponse {
   questions: Question[];
+  complexityIndex: number;
 }
 
 export class QuizFormatError extends Error {
@@ -57,6 +58,10 @@ export function parseQuizResponse(raw: string): GenerateQuizResponse {
 
   if (!isRecord(parsed) || !Array.isArray(parsed.questions) || parsed.questions.length !== 5) {
     throw new QuizFormatError("Gemini response did not contain exactly five questions");
+  }
+
+  if (typeof parsed.complexityIndex !== "number" || parsed.complexityIndex <= 0) {
+    throw new QuizFormatError("Gemini response did not contain a valid complexityIndex");
   }
 
   const questions: Question[] = parsed.questions.map((candidate, index) => {
@@ -125,5 +130,5 @@ export function parseQuizResponse(raw: string): GenerateQuizResponse {
     };
   });
 
-  return { questions };
+  return { questions, complexityIndex: parsed.complexityIndex };
 }

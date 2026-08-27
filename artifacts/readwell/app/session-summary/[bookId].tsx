@@ -17,6 +17,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import { BadgeItem } from '@/components/BadgeItem';
 import { BadgeKey, BADGE_INFO } from '@/types';
+import { calculateEloGain } from '@/utils/xp';
 
 export default function SessionSummaryScreen() {
   const params = useLocalSearchParams<{
@@ -26,6 +27,7 @@ export default function SessionSummaryScreen() {
     total: string;
     xpEarned: string;
     secondsRead: string;
+    complexityIndex?: string;
     skipped?: string;
   }>();
 
@@ -36,6 +38,7 @@ export default function SessionSummaryScreen() {
     total: totalStr,
     xpEarned: xpStr,
     secondsRead: secStr,
+    complexityIndex: compStr,
     skipped,
   } = params;
 
@@ -44,6 +47,7 @@ export default function SessionSummaryScreen() {
   const total = parseInt(totalStr ?? '5', 10);
   const xpEarned = parseInt(xpStr ?? '0', 10);
   const secondsRead = parseInt(secStr ?? '0', 10);
+  const complexityIndex = parseFloat(compStr ?? '1.0');
   const wasSkipped = skipped === 'true';
 
   const colors = useColors();
@@ -80,6 +84,7 @@ export default function SessionSummaryScreen() {
 
       const comprehensionScore = total > 0 ? Math.round((score / Math.max(total - 1, 1)) * 100) : 0;
       const isPerfectQuiz = !wasSkipped && total > 1 && score === total - 1;
+      const eloEarned = calculateEloGain(comprehensionScore, complexityIndex);
 
       const result = await completeSession({
         bookId: book.id,
@@ -88,6 +93,7 @@ export default function SessionSummaryScreen() {
         segmentsCompleted: 1,
         comprehensionScore,
         xpEarned,
+        eloEarned,
       }, { bookFinished: isLastSegment, isPerfectQuiz });
 
       if (isPerfectQuiz) {
@@ -140,6 +146,7 @@ export default function SessionSummaryScreen() {
 
   const minutesRead = Math.floor(secondsRead / 60);
   const comprScore = total > 1 ? Math.round((score / (total - 1)) * 100) : (wasSkipped ? 0 : 100);
+  const eloEarnedDisplay = calculateEloGain(comprScore, complexityIndex);
   const isBookFinished = segmentIndex + 1 >= book.segments.length;
   const nextSegmentIndex = segmentIndex + 1;
 
@@ -206,6 +213,16 @@ export default function SessionSummaryScreen() {
               <Feather name="bar-chart-2" size={18} color="#8B5CF6" />
               <Text style={[styles.statVal, { color: colors.foreground }]}>{comprScore}%</Text>
               <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>comprehension</Text>
+            </View>
+          )}
+
+          {!wasSkipped && (
+            <View style={[styles.statCard, { backgroundColor: '#3B82F615', borderColor: '#3B82F640' }]}>
+              <Feather name="trending-up" size={18} color="#3B82F6" />
+              <Animated.Text style={[styles.statVal, { color: '#3B82F6' }]}>
+                +{eloEarnedDisplay}
+              </Animated.Text>
+              <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>ELO gained</Text>
             </View>
           )}
 
@@ -285,9 +302,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
-  scoreNum: { fontSize: 32, fontFamily: 'Inter_700Bold', color: '#FFF' },
+  scoreNum: { fontSize: 32, fontFamily: 'Newsreader_700Bold', color: '#FFF' },
   scoreLabel: { fontSize: 13, fontFamily: 'Inter_400Regular', color: '#FFF9' },
-  summaryTitle: { fontSize: 26, fontFamily: 'Inter_700Bold', textAlign: 'center' },
+  summaryTitle: { fontSize: 26, fontFamily: 'Newsreader_700Bold', textAlign: 'center' },
   finishedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -300,7 +317,7 @@ const styles = StyleSheet.create({
   finishedBadgeText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
   statsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 20 },
   statCard: { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 4 },
-  statVal: { fontSize: 22, fontFamily: 'Inter_700Bold', marginTop: 2 },
+  statVal: { fontSize: 22, fontFamily: 'Newsreader_700Bold', marginTop: 2 },
   statLbl: { fontSize: 11, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   section: { marginHorizontal: 20, marginBottom: 16 },
   badgesCard: { borderRadius: 18, borderWidth: 1, padding: 18, gap: 14 },

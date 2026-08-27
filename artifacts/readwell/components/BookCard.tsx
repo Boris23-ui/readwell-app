@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: '#fff',
-    fontFamily: 'Inter_700Bold',
+    fontFamily: 'Newsreader_700Bold',
   },
   info: {
     flex: 1,

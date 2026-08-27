@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp, Layout, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
@@ -50,7 +51,7 @@ export default function StatsScreen() {
       </View>
 
       {/* Stat cards */}
-      <View style={styles.section}>
+      <Animated.View entering={ZoomIn.springify()} layout={Layout.springify()} style={styles.section}>
         <View style={styles.statRow}>
           <StatCard
             label="Time read"
@@ -71,16 +72,16 @@ export default function StatsScreen() {
             icon={<Feather name="bar-chart-2" size={18} color="#8B5CF6" />}
           />
         </View>
-      </View>
+      </Animated.View>
 
       {/* Weekly chart */}
-      <View style={[styles.section, styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Animated.View entering={FadeInDown.delay(100).springify()} layout={Layout.springify()} style={[styles.section, styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>This week</Text>
         <WeeklyChart activities={dailyActivities} goalMinutes={profile.dailyGoalMinutes} />
-      </View>
+      </Animated.View>
 
       {/* Streak info */}
-      <View style={[styles.section, styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Animated.View entering={FadeInDown.delay(200).springify()} layout={Layout.springify()} style={[styles.section, styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>Streak</Text>
         <View style={styles.streakRow}>
           <View style={styles.streakItem}>
@@ -98,17 +99,17 @@ export default function StatsScreen() {
             <Text style={[styles.streakLabel, { color: colors.mutedForeground }]}>sessions</Text>
           </View>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Badges */}
-      <View style={styles.section}>
+      <Animated.View entering={FadeInUp.delay(300).springify()} layout={Layout.springify()} style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Badges</Text>
         <View style={[styles.badgesGrid, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {ALL_BADGES.map(key => (
             <BadgeItem key={key} badgeKey={key} earned={profile.badges.includes(key)} />
           ))}
         </View>
-      </View>
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -116,15 +117,15 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingBottom: 16 },
-  title: { fontSize: 28, fontFamily: 'Inter_700Bold' },
+  title: { fontSize: 28, fontFamily: 'Newsreader_700Bold' },
   section: { paddingHorizontal: 20, marginBottom: 16 },
   statRow: { flexDirection: 'row', gap: 10 },
   card: { borderRadius: 18, borderWidth: 1, padding: 18 },
   cardTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontFamily: 'Inter_700Bold', marginBottom: 14 },
+  sectionTitle: { fontSize: 18, fontFamily: 'Newsreader_700Bold', marginBottom: 14 },
   streakRow: { flexDirection: 'row', alignItems: 'center' },
   streakItem: { flex: 1, alignItems: 'center', gap: 4 },
-  streakNum: { fontSize: 32, fontFamily: 'Inter_700Bold' },
+  streakNum: { fontSize: 32, fontFamily: 'Newsreader_700Bold' },
   streakLabel: { fontSize: 12, fontFamily: 'Inter_400Regular' },
   divider: { width: 1, height: 40 },
   badgesGrid: {

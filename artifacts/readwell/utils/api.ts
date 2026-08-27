@@ -187,11 +187,15 @@ export async function deletePdfPages(bookId: string): Promise<void> {
 export async function generateQuiz(
   segmentText: string,
   readingLevel: string,
+  elo?: number,
+  secondsRead?: number,
+  wordCount?: number,
+  complexity?: number
 ): Promise<{ questions: any[] }> {
   const response = await fetch(`${getBaseUrl()}/api/quiz/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ segmentText, readingLevel }),
+    body: JSON.stringify({ segmentText, readingLevel, elo, secondsRead, wordCount, complexity }),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
@@ -214,6 +218,28 @@ export async function simplifyText(
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const error = new Error((err as any).error ?? 'Failed to simplify text') as Error & { code?: string };
+    error.code = (err as any).code;
+    throw error;
+  }
+  return response.json();
+}
+
+export interface RecommendationRequest {
+  elo?: number;
+  readingLevel?: string;
+  interests?: string[];
+  recentTopics?: string[];
+}
+
+export async function fetchRecommendations(params: RecommendationRequest) {
+  const response = await fetch(`${getBaseUrl()}/api/recommendations/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const error = new Error((err as any).error ?? 'Failed to fetch recommendations') as Error & { code?: string };
     error.code = (err as any).code;
     throw error;
   }

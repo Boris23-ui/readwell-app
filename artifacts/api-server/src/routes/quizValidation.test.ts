@@ -41,6 +41,7 @@ const validQuiz = {
       isOpenEnded: true,
     },
   ],
+  complexityIndex: 2.5,
 };
 
 describe("parseQuizResponse", () => {

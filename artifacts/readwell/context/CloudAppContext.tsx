@@ -13,7 +13,7 @@ const STORAGE_KEYS = {
   PENDING_PDF_DELETIONS: '@readwell/pending-pdf-deletions',
 };
 
-const DEFAULT_PROFILE: UserProfile = {
+export const DEFAULT_PROFILE: UserProfile = {
   name: '',
   ageGroup: 'adult',
   readingLevel: 'intermediate',
@@ -275,6 +275,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     const newTotalXp = profile.xp + session.xpEarned;
+    const newElo = (profile.elo || 100) + (session.eloEarned || 0);
     const newXpDomains = {
       ...profile.xpDomains,
       general: (profile.xpDomains?.general || 0) + session.xpEarned
@@ -314,6 +315,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const updatedProfile: UserProfile = {
       ...profile,
       xp: newTotalXp,
+      elo: newElo,
       xpDomains: newXpDomains,
       level: newLevel,
       streakCurrent: newStreak,

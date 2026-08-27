@@ -11,8 +11,15 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
   Inter_700Bold,
-  useFonts,
+  useFonts as useInterFonts,
 } from '@expo-google-fonts/inter';
+import {
+  Newsreader_400Regular,
+  Newsreader_500Medium,
+  Newsreader_600SemiBold,
+  Newsreader_700Bold,
+  useFonts as useNewsreaderFonts,
+} from '@expo-google-fonts/newsreader';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -39,12 +46,22 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
+  const [interLoaded, interError] = useInterFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  const [newsreaderLoaded, newsreaderError] = useNewsreaderFonts({
+    Newsreader_400Regular,
+    Newsreader_500Medium,
+    Newsreader_600SemiBold,
+    Newsreader_700Bold,
+  });
+
+  const fontsLoaded = interLoaded && newsreaderLoaded;
+  const fontError = interError || newsreaderError;
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

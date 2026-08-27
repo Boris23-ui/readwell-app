@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -40,6 +40,7 @@ async function generateSimplificationWithRetry(
   ai: GoogleGenAI,
   model: string,
   prompt: string,
+  systemInstruction: string,
 ): Promise<{ text: string }> {
   let lastError: unknown;
 
@@ -49,8 +50,15 @@ async function generateSimplificationWithRetry(
         model,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
+          systemInstruction,
           responseMimeType: "application/json",
-          maxOutputTokens: 8192,
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              text: { type: Type.STRING }
+            }
+          },
+          maxOutputTokens: 2500,
         },
       });
 
@@ -120,17 +128,11 @@ router.post("/simplify", async (req, res) => {
     const model = process.env.GEMINI_MODEL || "gemini-3.7-flash";
     const truncated = passage.slice(0, MAX_PASSAGE_CHARS);
 
-    const prompt = `You are an expert reading tutor. Rewrite the following passage to match the ${targetLevel} reading level, making it easier to comprehend while preserving the core meaning and facts.
+    const systemInstruction = `You are an expert reading tutor. Rewrite the provided passage to match the ${targetLevel} reading level, making it easier to comprehend while preserving the core meaning and facts.`;
+    
+    const prompt = `PASSAGE:\n${truncated}`;
 
-Return ONLY a JSON object — no markdown, no explanation, just valid JSON:
-{
-  "text": "The fully simplified text goes here."
-}
-
-PASSAGE:
-${truncated}`;
-
-    const parsed = await generateSimplificationWithRetry(ai, model, prompt);
+    const parsed = await generateSimplificationWithRetry(ai, model, prompt, systemInstruction);
     res.json(parsed);
   } catch (err) {
     const status = getErrorStatus(err);

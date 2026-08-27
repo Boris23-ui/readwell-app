@@ -39,6 +39,21 @@ export function calculateSessionXp(
   return xp;
 }
 
+export function calculateEloGain(accuracyPercent: number, complexityIndex: number): number {
+  // Accuracy * Complexity
+  // E.g. 100% accuracy on complexity 5.0 => 1.0 * 5.0 * 10 = 50 ELO
+  const baseMultiplier = 10;
+  return Math.round((accuracyPercent / 100) * complexityIndex * baseMultiplier);
+}
+
+export function getLeague(elo: number): { name: string; color: string; icon: string } {
+  if (elo >= 5000) return { name: 'Diamond', color: '#60A5FA', icon: '💎' };
+  if (elo >= 2500) return { name: 'Platinum', color: '#14B8A6', icon: '🔮' };
+  if (elo >= 1000) return { name: 'Gold', color: '#F59E0B', icon: '🏆' };
+  if (elo >= 500) return { name: 'Silver', color: '#9CA3AF', icon: '⚔️' };
+  return { name: 'Bronze', color: '#B45309', icon: '🛡️' };
+}
+
 export function todayDate(): string {
   return new Date().toISOString().split('T')[0];
 }

@@ -110,9 +110,18 @@ export default function ReaderScreen() {
   const handleTakeQuiz = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const secondsRead = Math.floor((Date.now() - sessionStart) / 1000);
+    
+    // We send additional metrics for the ML Insight
+    const wordCount = segment?.paragraphs.join(' ').split(/\s+/).length || 200;
+    
     router.push({
       pathname: '/quiz/[bookId]',
-      params: { bookId: book.id, segmentIndex: String(segmentIndex), secondsRead: String(secondsRead) },
+      params: { 
+        bookId: book.id, 
+        segmentIndex: String(segmentIndex), 
+        secondsRead: String(secondsRead),
+        wordCount: String(wordCount),
+      },
     });
   };
 
@@ -150,22 +159,27 @@ export default function ReaderScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Fixed header */}
-      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.headerBtn}
         >
-          <Feather name="arrow-left" size={22} color={colors.foreground} />
+          <Feather name="arrow-left" size={20} color={colors.foreground} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={[styles.bookTitle, { color: colors.foreground }]} numberOfLines={1}>
             {book.title}
           </Text>
-          <Text style={[styles.segmentInfo, { color: colors.mutedForeground }]}>
-            Segment {segmentIndex + 1} of {totalSegments}
-          </Text>
+          <View style={styles.segmentBadge}>
+            <Text style={[styles.segmentInfo, { color: colors.primary }]}>
+              {segmentIndex + 1} / {totalSegments}
+            </Text>
+          </View>
         </View>
-        <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+        <View style={styles.headerBtn}>
+          <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+        </View>
       </View>
 
       {/* Progress bar */}
@@ -230,11 +244,17 @@ export default function ReaderScreen() {
         {!showFinishCard && (
           <TouchableOpacity
             onPress={showFinish}
-            style={[styles.doneBtn, { backgroundColor: book.coverColor }]}
             activeOpacity={0.85}
           >
-            <Feather name="check" size={18} color="#FFF" />
-            <Text style={styles.doneBtnText}>I've finished reading</Text>
+            <LinearGradient
+              colors={[book.coverColor, book.coverColor + 'CC']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.doneBtn}
+            >
+              <Feather name="check-circle" size={20} color="#FFF" />
+              <Text style={styles.doneBtnText}>I've finished reading</Text>
+            </LinearGradient>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -299,17 +319,29 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingBottom: 12,
-    gap: 12,
-    borderBottomWidth: 0,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+  },
+  headerBtn: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerCenter: { flex: 1, alignItems: 'center' },
-  bookTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', maxWidth: 200, textAlign: 'center' },
-  segmentInfo: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 1 },
-  timer: { fontSize: 13, fontFamily: 'Inter_500Medium', minWidth: 42, textAlign: 'right' },
-  progressTrack: { height: 3, width: '100%' },
-  progressFill: { height: 3 },
+  bookTitle: { fontSize: 16, fontFamily: 'Newsreader_700Bold', maxWidth: 220, textAlign: 'center' },
+  segmentBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  segmentInfo: { fontSize: 12, fontFamily: 'Inter_600SemiBold' },
+  timer: { fontSize: 13, fontFamily: 'Inter_500Medium', textAlign: 'right' },
+  progressTrack: { height: 4, width: '100%' },
+  progressFill: { height: 4, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
   content: { paddingHorizontal: 22, paddingTop: 24, gap: 0 },
   segmentTag: {
     flexDirection: 'row',
@@ -358,12 +390,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    borderRadius: 14,
-    paddingVertical: 16,
-    marginTop: 8,
+    gap: 10,
+    borderRadius: 16,
+    paddingVertical: 18,
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  doneBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  doneBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Newsreader_700Bold' },
   quizCard: {
     position: 'absolute',
     bottom: 0,
@@ -391,7 +428,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   quizIconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  quizCardTitle: { fontSize: 20, fontFamily: 'Inter_700Bold' },
+  quizCardTitle: { fontSize: 20, fontFamily: 'Newsreader_700Bold' },
   quizCardSub: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
   quizBtn: {
     flexDirection: 'row',

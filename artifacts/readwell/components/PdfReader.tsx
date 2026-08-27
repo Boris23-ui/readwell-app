@@ -26,6 +26,8 @@ import Reanimated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  FadeInUp,
+  Layout
 } from 'react-native-reanimated';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
@@ -349,51 +351,58 @@ export default function PdfReader({ book }: { book: Book }) {
           </View>
         )}
 
-        {sectionPages.map(page => {
+        {sectionPages.map((page, index) => {
           const aspect = page.width && page.height ? page.width / page.height : DEFAULT_ASPECT;
           const uri = resolveStorageUrl(page.imageUrl);
           return (
-            <TouchableOpacity
-              key={page.pageNumber}
-              activeOpacity={0.9}
-              onPress={() => setZoomPage({ uri, aspect })}
-              style={styles.pageWrap}
+            <Reanimated.View 
+              key={page.pageNumber} 
+              entering={FadeInUp.delay(50 + index * 100).springify()}
+              layout={Layout.springify()}
             >
-              <Image
-                source={{ uri }}
-                style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
-                contentFit="contain"
-                cachePolicy="disk"
-                transition={150}
-                onError={(e) => onImageError(page.pageNumber, e)}
-              />
-              {failedPages.has(page.pageNumber) && (
-                <View style={styles.imageErrorOverlay} pointerEvents="none">
-                  <Feather name="image" size={20} color="#EF4444" />
-                  <Text style={styles.imageErrorText}>Could not load page</Text>
-                </View>
-              )}
-              {page.lowConfidence && (
-                <View style={styles.lowConfidenceBadge} pointerEvents="none">
-                  <Feather name="alert-triangle" size={12} color="#92400E" />
-                  <Text style={styles.lowConfidenceBadgeText}>
-                    Blurry scan — quiz questions may be limited
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => setZoomPage({ uri, aspect })}
+                style={styles.pageWrap}
+              >
+                <Image
+                  source={{ uri }}
+                  style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
+                  contentFit="contain"
+                  cachePolicy="disk"
+                  transition={150}
+                  onError={(e) => onImageError(page.pageNumber, e)}
+                />
+                {failedPages.has(page.pageNumber) && (
+                  <View style={styles.imageErrorOverlay} pointerEvents="none">
+                    <Feather name="image" size={20} color="#EF4444" />
+                    <Text style={styles.imageErrorText}>Could not load page</Text>
+                  </View>
+                )}
+                {page.lowConfidence && (
+                  <View style={styles.lowConfidenceBadge} pointerEvents="none">
+                    <Feather name="alert-triangle" size={12} color="#92400E" />
+                    <Text style={styles.lowConfidenceBadgeText}>
+                      Blurry scan — quiz questions may be limited
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Reanimated.View>
           );
         })}
 
         {!showFinishCard && (
-          <TouchableOpacity
-            onPress={showFinish}
-            style={[styles.doneBtn, { backgroundColor: book.coverColor }]}
-            activeOpacity={0.85}
-          >
-            <Feather name="check" size={18} color="#FFF" />
-            <Text style={styles.doneBtnText}>I've finished reading</Text>
-          </TouchableOpacity>
+          <Reanimated.View entering={FadeInUp.delay(200).springify()}>
+            <TouchableOpacity
+              onPress={showFinish}
+              style={[styles.doneBtn, { backgroundColor: book.coverColor }]}
+              activeOpacity={0.85}
+            >
+              <Feather name="check" size={18} color="#FFF" />
+              <Text style={styles.doneBtnText}>I've finished reading</Text>
+            </TouchableOpacity>
+          </Reanimated.View>
         )}
       </ScrollView>
 
@@ -557,7 +566,7 @@ const styles = StyleSheet.create({
   },
   quizCardHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#E5E5E5', marginBottom: 8 },
   quizIconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  quizCardTitle: { fontSize: 20, fontFamily: 'Inter_700Bold' },
+  quizCardTitle: { fontSize: 20, fontFamily: 'Newsreader_700Bold' },
   quizCardSub: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center', lineHeight: 20 },
   quizQualityWarning: {
     flexDirection: 'row',

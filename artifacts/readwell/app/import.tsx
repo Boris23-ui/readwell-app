@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Animated,
 } from 'react-native';
+import Animated, { FadeInDown, FadeInUp, Layout, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -275,8 +275,9 @@ function MobilePickerButton({
   };
 
   return (
-    <TouchableOpacity
-      onPress={handlePick}
+    <Animated.View entering={ZoomIn.springify()} layout={Layout.springify()}>
+      <TouchableOpacity
+        onPress={handlePick}
       disabled={isExtracting}
       style={[
         styles.mobilePickerBtn,
@@ -312,6 +313,7 @@ function MobilePickerButton({
         </>
       )}
     </TouchableOpacity>
+    </Animated.View>
   );
 }
 
@@ -333,7 +335,11 @@ function FileBadge({
   colors: ReturnType<typeof useColors>;
 }) {
   return (
-    <View style={[styles.fileBadge, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
+    <Animated.View 
+      entering={FadeInUp.springify()} 
+      layout={Layout.springify()}
+      style={[styles.fileBadge, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}
+    >
       <Feather name={isPdf ? 'file-text' : 'file'} size={18} color={colors.primary} />
       <View style={styles.fileBadgeInfo}>
         <Text style={[styles.fileBadgeName, { color: colors.foreground }]} numberOfLines={1}>
@@ -348,7 +354,7 @@ function FileBadge({
       <TouchableOpacity onPress={onClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
         <Feather name="x-circle" size={18} color={colors.mutedForeground} />
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -741,7 +747,7 @@ export default function ImportScreen() {
 
             {/* Render/upload progress */}
             {extracting && statusMsg.length > 0 && (
-              <View style={[styles.statusRow, { backgroundColor: `${colors.primary}12` }]}>
+              <Animated.View entering={FadeInUp.springify()} layout={Layout.springify()} style={[styles.statusRow, { backgroundColor: `${colors.primary}12` }]}>
                 <View style={styles.statusContent}>
                   <ActivityIndicator color={colors.primary} size="small" />
                   <Text style={[styles.statusText, { color: colors.foreground }]} numberOfLines={2}>
@@ -761,7 +767,7 @@ export default function ImportScreen() {
                     />
                   </View>
                 )}
-              </View>
+              </Animated.View>
             )}
 
             {/* Extracted file badge */}
@@ -824,7 +830,7 @@ export default function ImportScreen() {
           )}
 
           {/* ── Title ──────────────────────────────────────── */}
-          <View style={styles.field}>
+          <Animated.View entering={FadeInDown.delay(100).springify()} layout={Layout.springify()} style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Title *</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
@@ -834,10 +840,10 @@ export default function ImportScreen() {
               onChangeText={setTitle}
               returnKeyType="next"
             />
-          </View>
+          </Animated.View>
 
           {/* ── Author ─────────────────────────────────────── */}
-          <View style={styles.field}>
+          <Animated.View entering={FadeInDown.delay(150).springify()} layout={Layout.springify()} style={styles.field}>
             <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Author (optional)</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
@@ -847,11 +853,11 @@ export default function ImportScreen() {
               onChangeText={setAuthor}
               returnKeyType="next"
             />
-          </View>
+          </Animated.View>
 
           {/* ── Content (hidden for PDF — the pages carry the content) ── */}
           {!pdfData && (
-            <View style={styles.field}>
+            <Animated.View entering={FadeInDown.delay(200).springify()} layout={Layout.springify()} style={styles.field}>
               <View style={styles.contentHeader}>
                 <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Content *</Text>
                 {content.length > 0 && (
@@ -875,7 +881,7 @@ export default function ImportScreen() {
                 multiline
                 textAlignVertical="top"
               />
-            </View>
+            </Animated.View>
           )}
 
           {/* ── PDF summary (shown instead of content textarea) ── */}
