@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/utils/firebase';
-import { collection, query, where, getDocs, doc, runTransaction } from 'firebase/firestore';
+import { useApp } from '@/context/CloudAppContext';
+import { supabase, isSupabaseConfigured } from '@/utils/supabase';
+import { getSponsorLearners, getDailyActivitiesFromDb } from '@/utils/supabaseDb';
 import { UserProfile, DailyActivity } from '@/types';
 import { Feather } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInRight, Layout } from 'react-native-reanimated';
@@ -12,7 +13,8 @@ import * as Haptics from 'expo-haptics';
 
 export default function AnalyticsAndTokensScreen() {
   const colors = useColors();
-  const { user, profile, updateProfile } = useAuth();
+  const { user } = useAuth();
+  const { profile, updateProfile } = useApp();
   
   const [learners, setLearners] = useState<UserProfile[]>([]);
   const [selectedLearner, setSelectedLearner] = useState<UserProfile | null>(null);
@@ -25,9 +27,7 @@ export default function AnalyticsAndTokensScreen() {
     if (!user) return;
     const fetchLearners = async () => {
       try {
-        const q = query(collection(db, 'users'), where('sponsorId', '==', user.uid));
-        const snap = await getDocs(q);
-        const fetched = snap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
+        const fetched = await getSponsorLearners(user.uid);
         setLearners(fetched);
         if (fetched.length > 0) handleSelectLearner(fetched[0]);
       } catch (error) {
@@ -43,9 +43,7 @@ export default function AnalyticsAndTokensScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedLearner(learner);
     try {
-      const dailyRef = collection(db, 'users', learner.uid as string, 'daily');
-      const snap = await getDocs(dailyRef);
-      const activities = snap.docs.map(d => d.data() as DailyActivity);
+      const activities = await getDailyActivitiesFromDb(learner.uid as string);
       activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setDailyActivity(activities);
     } catch (e) {
@@ -61,41 +59,30 @@ export default function AnalyticsAndTokensScreen() {
       Alert.alert('Invalid amount', 'Please enter a valid number of tokens.');
       return;
     }
-    if (profile.tokens < amount) {
+    if ((profile.tokens ?? 0) < amount) {
       Alert.alert('Insufficient balance', 'You do not have enough tokens.');
       return;
     }
 
     setIsTransferring(true);
     try {
-      const sponsorRef = doc(db, 'users', user.uid);
-      const learnerRef = doc(db, 'users', selectedLearner.uid as string);
+      if (isSupabaseConfigured()) {
+        const newSponsorTokens = (profile.tokens ?? 0) - amount;
+        const newLearnerTokens = (selectedLearner.tokens ?? 0) + amount;
 
-      await runTransaction(db, async (transaction) => {
-        const sponsorDoc = await transaction.get(sponsorRef);
-        const learnerDoc = await transaction.get(learnerRef);
+        await supabase.from('users').update({ tokens: newSponsorTokens }).eq('id', user.uid);
+        await supabase.from('users').update({ tokens: newLearnerTokens }).eq('id', selectedLearner.uid as string);
+      }
 
-        if (!sponsorDoc.exists() || !learnerDoc.exists()) throw new Error('Document missing');
-
-        const newSponsorTokens = sponsorDoc.data().tokens - amount;
-        if (newSponsorTokens < 0) throw new Error('Insufficient funds');
-        
-        const newLearnerTokens = learnerDoc.data().tokens + amount;
-
-        transaction.update(sponsorRef, { tokens: newSponsorTokens });
-        transaction.update(learnerRef, { tokens: newLearnerTokens });
-      });
-
-      updateProfile({ tokens: profile.tokens - amount });
-      setSelectedLearner(prev => prev ? { ...prev, tokens: prev.tokens + amount } : prev);
+      updateProfile({ tokens: (profile.tokens ?? 0) - amount });
+      setSelectedLearner(prev => prev ? { ...prev, tokens: (prev.tokens ?? 0) + amount } : prev);
       
-      Alert.alert('Success', `Transferred ${amount} tokens to ${selectedLearner.displayName || 'the learner'}.`);
+      Alert.alert('Success', `Transferred ${amount} tokens to ${selectedLearner.displayName || selectedLearner.name || 'the learner'}.`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTransferAmount('1');
     } catch (e) {
       console.error(e);
       Alert.alert('Error', 'Transaction failed.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsTransferring(false);
     }
@@ -198,7 +185,7 @@ export default function AnalyticsAndTokensScreen() {
             </Animated.View>
             <Animated.View entering={FadeInDown.delay(300).springify()} layout={Layout.springify()} style={[styles.statBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[styles.statIconBg, { backgroundColor: '#EF444420' }]}>
-                <Feather name="flame" size={20} color="#EF4444" />
+                <Feather name="zap" size={20} color="#EF4444" />
               </View>
               <Text style={[styles.statValue, { color: colors.text }]}>{selectedLearner.streakCurrent || 0}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Current Streak</Text>

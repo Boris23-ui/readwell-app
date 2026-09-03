@@ -1,83 +1,11 @@
 import { Router, type Request } from "express";
-import { GoogleGenAI, Type } from "@google/genai";
+import { createHash } from "crypto";
 import { logger } from "../lib/logger";
+import { aiGateway } from "../lib/aiGateway";
 
 const router = Router();
 
 const MAX_PASSAGE_CHARS = 12_000;
-const GEMINI_TIMEOUT_MS = 30_000;
-const MAX_GENERATION_ATTEMPTS = 2;
-const RETRY_DELAY_MS = 400;
-
-function getErrorStatus(error: unknown): number | undefined {
-  if (typeof error === "object" && error !== null) {
-    const record = error as Record<string, unknown>;
-    for (const key of ["status", "statusCode", "code"] as const) {
-      if (!(key in record)) continue;
-      const value = record[key];
-      const status = typeof value === "number" ? value : Number(value);
-      if (Number.isInteger(status) && status >= 400 && status <= 599) {
-        return status;
-      }
-    }
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  const statusMatch = message.match(/\b(408|429|500|502|503|504)\b/);
-  if (statusMatch) return Number(statusMatch[1]);
-  return undefined;
-}
-
-function getSafeErrorSummary(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/\s+/g, " ").slice(0, 180);
-}
-
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function generateSimplificationWithRetry(
-  ai: GoogleGenAI,
-  model: string,
-  prompt: string,
-  systemInstruction: string,
-): Promise<{ text: string }> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              text: { type: Type.STRING }
-            }
-          },
-          maxOutputTokens: 2500,
-        },
-      });
-
-      const jsonText = response.text ?? "{}";
-      const parsed = JSON.parse(jsonText);
-      if (typeof parsed.text !== "string") {
-        throw new Error("Invalid format");
-      }
-      return { text: parsed.text };
-    } catch (error) {
-      lastError = error;
-      if (attempt === MAX_GENERATION_ATTEMPTS) {
-        throw error;
-      }
-      await wait(RETRY_DELAY_MS * attempt);
-    }
-  }
-  throw lastError ?? new Error("Generation failed");
-}
 
 router.post("/simplify", async (req, res) => {
   const body = req.body as {
@@ -85,7 +13,7 @@ router.post("/simplify", async (req, res) => {
     targetLevel?: unknown;
   };
   const segmentText = body.segmentText;
-  const targetLevel = body.targetLevel || "beginner";
+  const targetLevel = String(body.targetLevel || "beginner");
 
   if (typeof segmentText !== "string" || segmentText.trim().length === 0) {
     res.status(400).json({
@@ -104,39 +32,40 @@ router.post("/simplify", async (req, res) => {
     return;
   }
 
-  const apiKey =
-    (req.headers["x-gemini-api-key"] as string) ||
-    ((req.body as any)?.apiKey as string) ||
-    process.env.GEMINI_API_KEY;
+  // Build cache key from passage + target level
+  const passageHash = createHash("sha256")
+    .update(`${passage}:${targetLevel}`)
+    .digest("hex")
+    .slice(0, 16);
 
-  if (!apiKey) {
-    logger.info("GEMINI_API_KEY not found; generating fallback simplification");
-    res.json({
-      text: "This is a simplified fallback text since no API key is present. In production, this would be a rewritten passage tailored to the user's reading level."
-    });
-    return;
-  }
+  const systemInstruction = `You are an expert reading tutor. Rewrite the provided passage to match the ${targetLevel} reading level, making it easier to comprehend while preserving the core meaning and facts. Return a JSON object with a single "text" field containing the rewritten passage.`;
+
+  const prompt = `PASSAGE:\n${passage.slice(0, MAX_PASSAGE_CHARS)}`;
 
   try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        timeout: GEMINI_TIMEOUT_MS,
-        retryOptions: { attempts: 1 },
-      },
+    const result = await aiGateway.generate({
+      purpose: 'simplify',
+      priority: 'standard',
+      cacheKey: `simplify:${passageHash}`,
+      cacheTtlMs: 24 * 60 * 60 * 1000, // 24 hours — simplified text doesn't change
+      prompt,
+      systemInstruction,
+      maxOutputTokens: 2500,
+      fallbackFn: () => JSON.stringify({
+        text: "This section has been marked for simplification. The AI simplification service is temporarily unavailable — please try again in a few minutes, or continue reading the original text.",
+      }),
     });
-    const model = process.env.GEMINI_MODEL || "gemini-3.7-flash";
-    const truncated = passage.slice(0, MAX_PASSAGE_CHARS);
 
-    const systemInstruction = `You are an expert reading tutor. Rewrite the provided passage to match the ${targetLevel} reading level, making it easier to comprehend while preserving the core meaning and facts.`;
-    
-    const prompt = `PASSAGE:\n${truncated}`;
-
-    const parsed = await generateSimplificationWithRetry(ai, model, prompt, systemInstruction);
-    res.json(parsed);
+    const parsed = JSON.parse(result.text);
+    if (typeof parsed.text === "string") {
+      res.json({ text: parsed.text });
+    } else if (typeof parsed === "string") {
+      res.json({ text: parsed });
+    } else {
+      res.json({ text: result.text });
+    }
   } catch (err) {
-    const status = getErrorStatus(err);
-    logger.error({ status, errorSummary: getSafeErrorSummary(err) }, "Simplification error");
+    logger.error({ err }, "Simplification error");
     res.status(503).json({
       error: "Failed to simplify text.",
       code: "SIMPLIFY_ERROR",
@@ -145,3 +74,4 @@ router.post("/simplify", async (req, res) => {
 });
 
 export default router;
+

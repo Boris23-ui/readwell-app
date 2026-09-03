@@ -4,12 +4,12 @@ import { useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { db } from '@/utils/firebase';
+import { getProfileFromDb, getBooksFromDb, getDailyActivitiesFromDb } from '@/utils/supabaseDb';
 import { useColors } from '@/hooks/useColors';
 import { ProgressRing } from '@/components/ProgressRing';
 import { getXpProgressInLevel } from '@/utils/xp';
 import { UserProfile, Book, DailyActivity } from '@/types';
+import { DEFAULT_PROFILE } from '@/context/CloudAppContext';
 
 function getTodayString(): string {
   return new Date().toISOString().split('T')[0];
@@ -31,18 +31,17 @@ export default function SponsorLearnerViewScreen() {
 
     const fetchData = async () => {
       try {
-        const pSnap = await getDoc(doc(db, 'users', learnerId));
-        if (pSnap.exists()) {
-          setProfile(pSnap.data() as UserProfile);
-        }
+        const p = await getProfileFromDb(learnerId, DEFAULT_PROFILE);
+        setProfile(p);
 
-        const bSnap = await getDocs(collection(db, 'users', learnerId, 'books'));
-        setBooks(bSnap.docs.map(d => d.data() as Book));
+        const b = await getBooksFromDb(learnerId);
+        setBooks(b);
 
         const todayStr = getTodayString();
-        const aSnap = await getDoc(doc(db, 'users', learnerId, 'daily', todayStr));
-        if (aSnap.exists()) {
-          setTodayActivity(aSnap.data() as DailyActivity);
+        const activities = await getDailyActivitiesFromDb(learnerId);
+        const today = activities.find(a => a.date === todayStr);
+        if (today) {
+          setTodayActivity(today);
         }
       } catch (e) {
         console.error('Failed to fetch learner data:', e);
@@ -95,8 +94,8 @@ export default function SponsorLearnerViewScreen() {
 
       <View style={styles.statsRow}>
         <LinearGradient
-          colors={profile.streakCurrent > 0 ? ['#EF4444', '#F97316'] : [colors.card, colors.card]}
-          style={[styles.streakCard, { borderColor: profile.streakCurrent > 0 ? '#EF444460' : colors.border }]}
+          colors={profile.streakCurrent > 0 ? [colors.terracotta, colors.honey] : [colors.card, colors.card]}
+          style={[styles.streakCard, { borderColor: profile.streakCurrent > 0 ? `${colors.terracotta}60` : colors.border }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
@@ -128,10 +127,10 @@ export default function SponsorLearnerViewScreen() {
         </View>
 
         <View style={[styles.xpCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.xpNum, { color: '#8B5CF6' }]}>{profile.xp}</Text>
+          <Text style={[styles.xpNum, { color: colors.sageDeep }]}>{profile.xp}</Text>
           <Text style={[styles.xpLabel, { color: colors.mutedForeground }]}>total XP</Text>
           <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
-            <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
+            <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any, backgroundColor: colors.sageDeep }]} />
           </View>
           <Text style={[styles.xpNext, { color: colors.mutedForeground }]}>
             {xpProgress.required - xpProgress.current} to next
@@ -182,7 +181,7 @@ const styles = StyleSheet.create({
   xpNum: { fontSize: 22, fontFamily: 'Newsreader_700Bold' },
   xpLabel: { fontSize: 11, fontFamily: 'Inter_400Regular' },
   xpTrack: { width: '100%', height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 4 },
-  xpFill: { height: 4, backgroundColor: '#8B5CF6', borderRadius: 2 },
+  xpFill: { height: 4, borderRadius: 2 },
   xpNext: { fontSize: 10, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   section: { paddingHorizontal: 20, marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontFamily: 'Newsreader_700Bold', marginBottom: 14 },

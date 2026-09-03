@@ -1,12 +1,29 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../utils/firebase';
 import { useAuth } from './AuthContext';
-import { UserProfile, Book, ReadingSession, DailyActivity, BadgeKey, Segment, Quiz, UserProfileSchema, BookSchema } from '@/types';
+import {
+  UserProfile,
+  Book,
+  ReadingSession,
+  DailyActivity,
+  BadgeKey,
+  Segment,
+  Quiz,
+} from '@/types';
 import { deletePdfPages } from '@/utils/api';
 import { runOrphanCleanup, type PendingPdfImport } from './orphanCleanup';
-import { inferOcrUsed, applyOcrMigration, parsePendingImports } from './AppContext'; // Re-use utilities from local context
+import { applyOcrMigration, parsePendingImports } from './AppContext';
+import {
+  getProfileFromDb,
+  saveProfileToDb,
+  getBooksFromDb,
+  saveBookToDb,
+  deleteBookFromDb,
+  getSessionsFromDb,
+  saveSessionToDb,
+  getDailyActivitiesFromDb,
+  saveDailyActivityToDb,
+} from '../utils/supabaseDb';
 
 const STORAGE_KEYS = {
   PENDING_PDF_IMPORTS: '@readwell/pending-pdf-imports',
@@ -22,6 +39,7 @@ export const DEFAULT_PROFILE: UserProfile = {
   xp: 0,
   xpDomains: { general: 0, fiction: 0, technical: 0, science: 0 },
   level: 1,
+  elo: 100,
   streakCurrent: 0,
   streakBest: 0,
   lastReadDate: null,
@@ -61,7 +79,10 @@ interface AppContextType {
   updateBook: (id: string, partial: Partial<Book>) => Promise<void>;
   deleteBook: (id: string) => Promise<void>;
   cacheSegmentQuiz: (bookId: string, segmentIndex: number, quiz: Quiz) => Promise<void>;
-  completeSession: (session: Omit<ReadingSession, 'id'>, opts?: { bookFinished?: boolean; isPerfectQuiz?: boolean }) => Promise<{ newBadges: BadgeKey[] }>;
+  completeSession: (
+    session: Omit<ReadingSession, 'id'>,
+    opts?: { bookFinished?: boolean; isPerfectQuiz?: boolean }
+  ) => Promise<{ newBadges: BadgeKey[] }>;
   getTodayActivity: () => DailyActivity | null;
   getBookById: (id: string) => Book | undefined;
   registerPendingPdfImport: (serverBookId: string) => Promise<void>;
@@ -80,92 +101,82 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dailyActivities, setDailyActivities] = useState<DailyActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from Firestore
+  // Load from Supabase or Local Storage
   useEffect(() => {
-    if (!user) {
-      setIsLoading(false);
-      return;
-    }
+    let isMounted = true;
 
     const load = async () => {
+      const currentUserId = user?.uid || 'guest_user';
       try {
-        const uid = user.uid;
-        
         // Load Profile
-        const profileRef = doc(db, 'users', uid);
-        const profileSnap = await getDoc(profileRef);
-        if (profileSnap.exists()) {
-          setProfile(profileSnap.data() as UserProfile);
-        } else {
-          await setDoc(profileRef, DEFAULT_PROFILE);
-        }
+        const loadedProfile = await getProfileFromDb(currentUserId, DEFAULT_PROFILE);
+        if (isMounted) setProfile(loadedProfile);
 
         // Load Books
-        const booksRef = collection(db, 'users', uid, 'books');
-        const booksSnap = await getDocs(booksRef);
-        let savedBooks = booksSnap.docs.map(d => d.data() as Book);
-        
-        const { books: migratedBooks, dirty } = applyOcrMigration(savedBooks);
-        savedBooks = migratedBooks;
+        const loadedBooks = await getBooksFromDb(currentUserId);
+        const { books: migratedBooks, dirty } = applyOcrMigration(loadedBooks);
+        if (isMounted) setBooks(migratedBooks);
         if (dirty) {
-          savedBooks.forEach(b => setDoc(doc(db, 'users', uid, 'books', b.id), b));
+          migratedBooks.forEach(b => saveBookToDb(currentUserId, b));
         }
-        setBooks(savedBooks);
 
         // Load Sessions
-        const sessionsRef = collection(db, 'users', uid, 'sessions');
-        const sessionsSnap = await getDocs(sessionsRef);
-        setSessions(sessionsSnap.docs.map(d => d.data() as ReadingSession));
+        const loadedSessions = await getSessionsFromDb(currentUserId);
+        if (isMounted) setSessions(loadedSessions);
 
         // Load Daily Activities
-        const dailyRef = collection(db, 'users', uid, 'daily');
-        const dailySnap = await getDocs(dailyRef);
-        setDailyActivities(dailySnap.docs.map(d => d.data() as DailyActivity));
+        const loadedDaily = await getDailyActivitiesFromDb(currentUserId);
+        if (isMounted) setDailyActivities(loadedDaily);
 
-        // Local tasks (cleanup)
+        // Orphan PDF cleanup
         const pendingRaw = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_IMPORTS);
         const pending = parsePendingImports(pendingRaw);
         if (pending !== null) {
           const { stillPending } = await runOrphanCleanup(
             pending,
-            savedBooks,
+            migratedBooks,
             Date.now(),
             (bookId) => deletePdfPages(bookId).catch(() => {})
           );
           await AsyncStorage.setItem(STORAGE_KEYS.PENDING_PDF_IMPORTS, JSON.stringify(stillPending));
         }
       } catch (e) {
-        console.error('Failed to load cloud data', e);
+        console.error('Failed to load application data:', e);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
+
     load();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
   const saveProfile = useCallback(async (p: UserProfile) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setProfile(p);
-    await setDoc(doc(db, 'users', user.uid), p);
+    await saveProfileToDb(currentUserId, p);
   }, [user]);
 
   const updateProfile = useCallback(async (partial: Partial<UserProfile>) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setProfile(prev => {
       const updated = { ...prev, ...partial };
-      setDoc(doc(db, 'users', user.uid), updated, { merge: true }).catch(console.error);
+      saveProfileToDb(currentUserId, updated).catch(console.error);
       return updated;
     });
   }, [user]);
 
   const consumeToken = useCallback((): boolean => {
     let success = false;
-    if (!user) return false;
+    const currentUserId = user?.uid || 'guest_user';
     setProfile(prev => {
       if (prev.tokens > 0) {
         success = true;
         const updated = { ...prev, tokens: prev.tokens - 1 };
-        updateDoc(doc(db, 'users', user.uid), { tokens: prev.tokens - 1 }).catch(console.error);
+        saveProfileToDb(currentUserId, updated).catch(console.error);
         return updated;
       }
       return prev;
@@ -174,41 +185,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const addTokens = useCallback((amount: number) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setProfile(prev => {
       const updated = { ...prev, tokens: prev.tokens + amount };
-      updateDoc(doc(db, 'users', user.uid), { tokens: prev.tokens + amount }).catch(console.error);
+      saveProfileToDb(currentUserId, updated).catch(console.error);
       return updated;
     });
   }, [user]);
 
   const addBook = useCallback(async (book: Book) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setBooks(prev => {
       const updated = [...prev, book];
-      setDoc(doc(db, 'users', user.uid, 'books', book.id), book).catch(console.error);
+      saveBookToDb(currentUserId, book).catch(console.error);
       return updated;
     });
   }, [user]);
 
   const updateBook = useCallback(async (id: string, partial: Partial<Book>) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setBooks(prev => {
       const updated = prev.map(b => b.id === id ? { ...b, ...partial } : b);
       const bookDoc = updated.find(b => b.id === id);
       if (bookDoc) {
-        setDoc(doc(db, 'users', user.uid, 'books', id), bookDoc).catch(console.error);
+        saveBookToDb(currentUserId, bookDoc).catch(console.error);
       }
       return updated;
     });
   }, [user]);
 
   const deleteBook = useCallback(async (id: string) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setBooks(prev => {
       const book = prev.find(b => b.id === id);
       const updated = prev.filter(b => b.id !== id);
-      deleteDoc(doc(db, 'users', user.uid, 'books', id)).catch(console.error);
+      deleteBookFromDb(currentUserId, id).catch(console.error);
 
       if (book?.sourceType === 'pdf' && book.pages && book.pages.length > 0) {
         const imageUrl = book.pages[0].imageUrl;
@@ -223,7 +234,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const cacheSegmentQuiz = useCallback(async (bookId: string, segmentIndex: number, quiz: Quiz) => {
-    if (!user) return;
+    const currentUserId = user?.uid || 'guest_user';
     setBooks(prev => {
       const updated = prev.map(b => {
         if (b.id !== bookId) return b;
@@ -234,7 +245,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
       const bookDoc = updated.find(b => b.id === bookId);
       if (bookDoc) {
-        setDoc(doc(db, 'users', user.uid, 'books', bookId), bookDoc).catch(console.error);
+        saveBookToDb(currentUserId, bookDoc).catch(console.error);
       }
       return updated;
     });
@@ -244,15 +255,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     sessionData: Omit<ReadingSession, 'id'>,
     opts: { bookFinished?: boolean; isPerfectQuiz?: boolean } = {}
   ): Promise<{ newBadges: BadgeKey[] }> => {
-    if (!user) return { newBadges: [] };
+    const currentUserId = user?.uid || 'guest_user';
     const session: ReadingSession = {
       ...sessionData,
       id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
     };
 
     setSessions(prev => {
-      const updated = [...prev, session];
-      setDoc(doc(db, 'users', user.uid, 'sessions', session.id), session).catch(console.error);
+      const updated = [session, ...prev];
+      saveSessionToDb(currentUserId, session).catch(console.error);
       return updated;
     });
 
@@ -265,12 +276,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const newXp = (existing?.xpEarned ?? 0) + session.xpEarned;
       const act = { date: today, minutesRead: newMinutes, xpEarned: newXp, goalMet: newMinutes >= profile.dailyGoalMinutes };
       
-      setDoc(doc(db, 'users', user.uid, 'daily', today), act).catch(console.error);
+      saveDailyActivityToDb(currentUserId, act).catch(console.error);
 
       if (existing) {
         return prev.map(a => a.date === today ? act : a);
       } else {
-        return [...prev, act];
+        return [act, ...prev];
       }
     });
 
@@ -278,7 +289,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const newElo = (profile.elo || 100) + (session.eloEarned || 0);
     const newXpDomains = {
       ...profile.xpDomains,
-      general: (profile.xpDomains?.general || 0) + session.xpEarned
+      general: (profile.xpDomains?.general || 0) + session.xpEarned,
     };
     const newLevel = getLevelFromXp(newTotalXp);
     const newTotalMinutes = profile.totalMinutesRead + minutesRead;
@@ -289,6 +300,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
     if (profile.lastReadDate === today) {
+      // already read today, streak stays
     } else if (profile.lastReadDate === yesterdayStr || profile.lastReadDate === null) {
       newStreak = profile.streakCurrent + 1;
     } else {
@@ -326,7 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       badges: [...profile.badges, ...newBadges],
     };
     setProfile(updatedProfile);
-    setDoc(doc(db, 'users', user.uid), updatedProfile).catch(console.error);
+    saveProfileToDb(currentUserId, updatedProfile).catch(console.error);
 
     return { newBadges };
   }, [profile, user]);
@@ -365,14 +377,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AppContext.Provider value={{
-      profile, books, sessions, dailyActivities, isLoading,
-      saveProfile, updateProfile,
-      addBook, updateBook, deleteBook, cacheSegmentQuiz,
-      completeSession, getTodayActivity, getBookById,
-      registerPendingPdfImport, clearPendingPdfImport,
-      consumeToken, addTokens,
-    }}>
+    <AppContext.Provider
+      value={{
+        profile,
+        books,
+        sessions,
+        dailyActivities,
+        isLoading,
+        saveProfile,
+        updateProfile,
+        addBook,
+        updateBook,
+        deleteBook,
+        cacheSegmentQuiz,
+        completeSession,
+        getTodayActivity,
+        getBookById,
+        registerPendingPdfImport,
+        clearPendingPdfImport,
+        consumeToken,
+        addTokens,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );

@@ -47,6 +47,8 @@ function getQuizErrorMessage(code?: string): string {
       return 'The quiz model is temporarily unavailable. Please try again later.';
     case 'GEMINI_INVALID_RESPONSE':
       return 'The AI returned an unusable quiz. Please try again.';
+    case 'GEMINI_UNAVAILABLE':
+      return 'The quiz service is temporarily unavailable. Please try again.';
     default:
       return 'Could not generate quiz. Please try again.';
   }
@@ -314,12 +316,19 @@ export default function QuizScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+      {/* Pattern Kitchen Stage 3: The Taste Test Header */}
       <View style={[styles.header, { paddingTop: topPad }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Feather name="x" size={22} color={colors.foreground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Quiz</Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            STAGE {segmentIndex + 1} · THE TASTE TEST
+          </Text>
+          <Text style={[styles.headerSubMono, { color: colors.mutedForeground }]}>
+            CRITIC REVIEW · LOOP + CHECKPOINT
+          </Text>
+        </View>
         <Text style={[styles.qNum, { color: colors.mutedForeground }]}>
           {currentQ + 1}/{totalQ}
         </Text>
@@ -335,7 +344,7 @@ export default function QuizScreen() {
               {
                 backgroundColor:
                   i < currentQ
-                    ? '#22C55E'
+                    ? colors.sageDeep
                     : i === currentQ
                     ? book.coverColor
                     : colors.muted,
@@ -380,9 +389,9 @@ export default function QuizScreen() {
 
                 if (revealed) {
                   if (i === question.correctIndex) {
-                    bg = '#22C55E20';
-                    border = '#22C55E';
-                    textColor = '#22C55E';
+                    bg = `${colors.sage}30`;
+                    border = colors.sageDeep;
+                    textColor = colors.sageDeep;
                   } else if (i === currentAnswer && i !== question.correctIndex) {
                     bg = `${colors.destructive}15`;
                     border = colors.destructive;
@@ -407,7 +416,7 @@ export default function QuizScreen() {
                     </View>
                     <Text style={[styles.optionText, { color: textColor }]}>{option}</Text>
                     {revealed && i === question.correctIndex && (
-                      <Feather name="check" size={16} color="#22C55E" />
+                      <Feather name="check" size={16} color={colors.sageDeep} />
                     )}
                     {revealed && i === currentAnswer && i !== question.correctIndex && (
                       <Feather name="x" size={16} color={colors.destructive} />
@@ -447,8 +456,8 @@ export default function QuizScreen() {
 
           {/* Open-ended accepted confirmation */}
           {revealed && question.isOpenEnded && (
-            <View style={[styles.evidenceBox, { backgroundColor: '#22C55E12', borderColor: '#22C55E40' }]}>
-              <Feather name="check-circle" size={14} color="#22C55E" />
+            <View style={[styles.evidenceBox, { backgroundColor: `${colors.sage}15`, borderColor: `${colors.sageDeep}40` }]}>
+              <Feather name="check-circle" size={14} color={colors.sageDeep} />
               <Text style={[styles.evidenceText, { color: colors.foreground }]}>
                 Reflection recorded. There's no wrong answer here — it's about engaging with the text.
               </Text>
@@ -463,21 +472,23 @@ export default function QuizScreen() {
           <TouchableOpacity
             onPress={handleReveal}
             disabled={!canReveal}
-            style={[styles.footerBtn, { backgroundColor: canReveal ? book.coverColor : colors.muted }]}
+            style={[styles.footerBtn, { backgroundColor: canReveal ? colors.honey : colors.muted }]}
             activeOpacity={0.85}
           >
-            <Text style={[styles.footerBtnText, { color: canReveal ? '#FFF' : colors.mutedForeground }]}>
-              Check Answer
+            <Text style={[styles.footerBtnText, { color: canReveal ? '#1F1C18' : colors.mutedForeground }]}>
+              EVALUATE DISH ▸
             </Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
             onPress={handleNext}
-            style={[styles.footerBtn, { backgroundColor: book.coverColor }]}
+            style={[styles.footerBtn, { backgroundColor: colors.honey }]}
             activeOpacity={0.85}
           >
-            <Text style={styles.footerBtnText}>{isLast ? 'See Results' : 'Next Question'}</Text>
-            <Feather name="arrow-right" size={18} color="#FFF" />
+            <Text style={[styles.footerBtnText, { color: '#1F1C18' }]}>
+              {isLast ? 'ADVANCE TO EXPEDITION SUMMARY ▸' : 'NEXT CHECKPOINT ▸'}
+            </Text>
+            <Feather name="arrow-right" size={18} color="#1F1C18" />
           </TouchableOpacity>
         )}
       </View>
@@ -501,7 +512,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
   },
-  headerTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
+  headerTitle: { fontSize: 16, fontFamily: 'Newsreader_700Bold', letterSpacing: -0.2 },
+  headerSubMono: { fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 0.9, marginTop: 2 },
   qNum: { fontSize: 14, fontFamily: 'Inter_500Medium' },
   dots: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 24 },
   dot: { flex: 1, height: 5, borderRadius: 2.5 },

@@ -6,6 +6,8 @@ import pdfRouter from "./pdf";
 import storageRouter from "./storage";
 import simplifyRouter from "./simplify";
 import recommendationsRouter from "./recommendations";
+import coachRouter from "./coach";
+import adminRouter from "./admin";
 
 const router: IRouter = Router();
 
@@ -16,5 +18,8 @@ router.use(pdfRouter);
 router.use(storageRouter);
 router.use(simplifyRouter);
 router.use(recommendationsRouter);
+router.use(coachRouter);
+router.use(adminRouter);
 
 export default router;
+

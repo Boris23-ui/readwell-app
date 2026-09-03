@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/utils/firebase';
-import { collection, query, where, onSnapshot, addDoc, getDocs, orderBy } from 'firebase/firestore';
+import { supabase, isSupabaseConfigured } from '@/utils/supabase';
+import { getSponsorLearners } from '@/utils/supabaseDb';
 import { UserProfile, Message } from '@/types';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,7 +40,7 @@ export default function SponsorMessagesScreen() {
           console.warn('Failed to parse cached messages', e);
         }
       } else {
-        setMessages([]); // Clear previous learner messages if not cached
+        setMessages([]);
       }
     });
   }, [selectedLearnerId]);
@@ -50,11 +50,9 @@ export default function SponsorMessagesScreen() {
     if (!user) return;
     const fetchLearners = async () => {
       try {
-        const q = query(collection(db, 'users'), where('sponsorId', '==', user.uid));
-        const snap = await getDocs(q);
-        const fetched = snap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
+        const fetched = await getSponsorLearners(user.uid);
         setLearners(fetched);
-        if (fetched.length > 0) setSelectedLearnerId(fetched[0].uid);
+        if (fetched.length > 0) setSelectedLearnerId(fetched[0].uid || null);
       } catch (error) {
         console.error('Error fetching learners', error);
       } finally {
@@ -64,40 +62,45 @@ export default function SponsorMessagesScreen() {
     fetchLearners();
   }, [user]);
 
-  // Listen to Messages for the selected learner
+  // Fetch & poll messages for the selected learner
   useEffect(() => {
     if (!user || !selectedLearnerId) return;
 
-    const q = query(
-      collection(db, 'messages'),
-      where('participants', 'array-contains', user.uid)
-    );
+    const fetchMessages = async () => {
+      if (isSupabaseConfigured()) {
+        try {
+          const nowIso = new Date().toISOString();
+          const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .or(`and(sender_id.eq.${user.uid},receiver_id.eq.${selectedLearnerId}),and(sender_id.eq.${selectedLearnerId},receiver_id.eq.${user.uid})`)
+            .gt('expires_at', nowIso)
+            .order('created_at', { ascending: true });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const now = new Date();
-      const allMsgs = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Message));
-      
-      // Filter for the selected learner and 24-hour expiration
-      const filtered = allMsgs.filter(m => {
-        const isWithLearner = m.participants.includes(selectedLearnerId);
-        const isNotExpired = new Date(m.expiresAt) > now;
-        return isWithLearner && isNotExpired;
-      });
+          if (data && !error) {
+            const mapped: Message[] = data.map((d: any) => ({
+              id: d.id,
+              senderId: d.sender_id,
+              receiverId: d.receiver_id,
+              participants: [d.sender_id, d.receiver_id],
+              text: d.text,
+              createdAt: d.created_at,
+              expiresAt: d.expires_at,
+              read: d.read,
+            }));
+            setMessages(mapped);
+            const cacheKey = `${CACHE_KEY_PREFIX}${selectedLearnerId}`;
+            await AsyncStorage.setItem(cacheKey, JSON.stringify(mapped));
+          }
+        } catch (err) {
+          console.warn('Supabase sponsor messages query error', err);
+        }
+      }
+    };
 
-      // Sort by creation time (since we couldn't easily compound query array-contains + orderBy without composite index setup)
-      filtered.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-      
-      setMessages(filtered);
-      
-      const cacheKey = `${CACHE_KEY_PREFIX}${selectedLearnerId}`;
-      AsyncStorage.setItem(cacheKey, JSON.stringify(filtered)).catch(e => {
-        console.warn('Failed to cache messages', e);
-      });
-    }, (error) => {
-      console.warn("Messages snapshot error", error);
-    });
-
-    return () => unsubscribe();
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 8000);
+    return () => clearInterval(interval);
   }, [user, selectedLearnerId]);
 
   const sendMessage = async () => {
@@ -109,21 +112,38 @@ export default function SponsorMessagesScreen() {
     setInputText('');
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours from now
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-    try {
-      await addDoc(collection(db, 'messages'), {
-        senderId: user.uid,
-        receiverId: selectedLearnerId,
-        participants: [user.uid, selectedLearnerId],
-        text: textToSend,
-        createdAt: now.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        read: false,
-      });
-    } catch (e) {
-      console.error('Failed to send message:', e);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    const newMsg: Message = {
+      id: 'msg_' + Date.now(),
+      senderId: user.uid,
+      receiverId: selectedLearnerId,
+      participants: [user.uid, selectedLearnerId],
+      text: textToSend,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      read: false,
+    };
+
+    const updated = [...messages, newMsg];
+    setMessages(updated);
+    const cacheKey = `${CACHE_KEY_PREFIX}${selectedLearnerId}`;
+    AsyncStorage.setItem(cacheKey, JSON.stringify(updated)).catch(() => {});
+
+    if (isSupabaseConfigured()) {
+      try {
+        await supabase.from('messages').insert({
+          sender_id: user.uid,
+          receiver_id: selectedLearnerId,
+          text: textToSend,
+          created_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          read: false,
+        });
+      } catch (e) {
+        console.error('Failed to send message to Supabase:', e);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
     }
   };
 
@@ -192,7 +212,7 @@ export default function SponsorMessagesScreen() {
                 ]}
                 onPress={() => {
                   Haptics.selectionAsync();
-                  setSelectedLearnerId(l.uid);
+                  setSelectedLearnerId(l.uid || null);
                 }}
               >
                 <Text style={[

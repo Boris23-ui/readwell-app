@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Chrome as Home, Users, BarChart2, MessageCircle } from 'lucide-react-native';
+import { Users, BarChart2, MessageCircle } from 'lucide-react-native';
 import { useColors } from '@/hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 

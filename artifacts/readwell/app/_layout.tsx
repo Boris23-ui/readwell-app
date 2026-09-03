@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AppProvider } from '@/context/CloudAppContext';
 import { AuthProvider } from '@/context/AuthContext';
+import { CoachProvider } from '@/context/CoachContext';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -34,6 +35,7 @@ function RootLayoutNav() {
       <Stack.Screen name="index" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(sponsor-tabs)" />
       <Stack.Screen
         name="import"
         options={{ presentation: 'modal', headerShown: false }}
@@ -79,7 +81,9 @@ export default function RootLayout() {
             <KeyboardProvider>
               <AuthProvider>
                 <AppProvider>
-                  <RootLayoutNav />
+                  <CoachProvider>
+                    <RootLayoutNav />
+                  </CoachProvider>
                 </AppProvider>
               </AuthProvider>
             </KeyboardProvider>

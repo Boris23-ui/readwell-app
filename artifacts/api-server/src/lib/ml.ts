@@ -1,5 +1,6 @@
-import { VertexAI, SchemaType } from '@google-cloud/vertexai';
+import { createHash } from 'crypto';
 import { logger } from './logger';
+import { aiGateway } from './aiGateway';
 
 export interface ReadingMetrics {
   elo: number;
@@ -15,89 +16,73 @@ export interface MLInsight {
   promptGuidance: string;
 }
 
-// In production, configure with the correct GCP project ID and location.
-// The VertexAI client uses Application Default Credentials (ADC).
-let vertexAiClient: VertexAI | null = null;
-try {
-  vertexAiClient = new VertexAI({
-    project: process.env.GOOGLE_CLOUD_PROJECT || 'my-project-id',
-    location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1',
-  });
-} catch (e) {
-  logger.warn({ err: e }, 'Failed to initialize Vertex AI client. ML predictions will fallback to defaults.');
-}
+/**
+ * Pure-heuristic comprehension evaluation.
+ * Replaces the previous Gemini API call — this function maps 4 numeric inputs
+ * (ELO, WPM, complexity, reading level) to 2 numeric outputs. An LLM is
+ * dramatically overkill for this; a deterministic formula gives equivalent
+ * results at zero token cost.
+ */
+export function evaluateComprehension(metrics: ReadingMetrics): MLInsight {
+  const wpm = metrics.secondsRead > 0
+    ? (metrics.wordCount / metrics.secondsRead) * 60
+    : 150; // default WPM if no timing data
 
-export async function evaluateComprehension(metrics: ReadingMetrics): Promise<MLInsight> {
-  const defaultOutput = {
-    predictedComprehension: 0.7,
-    recommendedComplexityAdjust: 0.0,
-    promptGuidance: "ML Insight fallback: Maintain the current level of difficulty.",
+  // ELO-based baseline comprehension (normalized 0–5000 → 0.0–1.0)
+  const eloFactor = Math.min(1.0, metrics.elo / 3000);
+
+  // Speed factor: too fast (>400 wpm) = likely skimming; too slow (<80 wpm) = struggling
+  let speedFactor = 1.0;
+  if (wpm > 400) speedFactor = 0.6;
+  else if (wpm < 80) speedFactor = 0.7;
+  else if (wpm > 300) speedFactor = 0.85;
+
+  // Complexity mismatch: high complexity + low ELO = lower predicted comprehension
+  const complexityPenalty = Math.max(0, (metrics.complexity - 3) * 0.1) * (1 - eloFactor);
+
+  // Reading level bonus
+  const levelBonus = metrics.readingLevel === 'advanced' ? 0.05
+    : metrics.readingLevel === 'beginner' ? -0.05
+    : 0;
+
+  const predictedComprehension = Math.max(0.2, Math.min(1.0,
+    (eloFactor * 0.6 + speedFactor * 0.3 + 0.1 + levelBonus) - complexityPenalty,
+  ));
+
+  // Difficulty adjustment: push harder if comprehension is high, ease off if low
+  let recommendedComplexityAdjust: number;
+  if (predictedComprehension > 0.85) {
+    recommendedComplexityAdjust = 0.5;
+  } else if (predictedComprehension > 0.7) {
+    recommendedComplexityAdjust = 0.2;
+  } else if (predictedComprehension < 0.35) {
+    recommendedComplexityAdjust = -0.5;
+  } else if (predictedComprehension < 0.5) {
+    recommendedComplexityAdjust = -0.3;
+  } else {
+    recommendedComplexityAdjust = 0.0;
+  }
+
+  // Build prompt guidance string for downstream quiz generation
+  let promptGuidance = `ML Insight: Heuristic predicts ${(predictedComprehension * 100).toFixed(0)}% comprehension (ELO ${metrics.elo}, ${wpm.toFixed(0)} WPM, complexity ${metrics.complexity}). `;
+  if (recommendedComplexityAdjust > 0.3) {
+    promptGuidance += 'The user is finding this easy. Make the inference and vocabulary questions slightly more challenging.';
+  } else if (recommendedComplexityAdjust < -0.3) {
+    promptGuidance += 'The user might be struggling with the complexity or skimming too fast. Keep the questions highly focused on core recall facts, and simplify the vocabulary.';
+  } else {
+    promptGuidance += 'The user is in the optimal learning zone. Maintain the current level of difficulty.';
+  }
+
+  logger.debug(
+    { elo: metrics.elo, wpm: wpm.toFixed(0), comp: predictedComprehension, adjust: recommendedComplexityAdjust },
+    'Heuristic comprehension evaluation',
+  );
+
+  return {
+    predictedComprehension,
+    recommendedComplexityAdjust,
+    promptGuidance,
   };
-
-  if (!vertexAiClient) {
-    return defaultOutput;
-  }
-
-  try {
-    const generativeModel = vertexAiClient.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction: {
-        role: 'system',
-        parts: [{ text: "You are an expert reading telemetry analyzer. Analyze the student reading metrics." }]
-      },
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            predictedComprehension: { type: SchemaType.NUMBER, description: 'estimated comprehension from 0.0 to 1.0' },
-            recommendedComplexityAdjust: { type: SchemaType.NUMBER, description: '-1.0 to 1.0 (-1=much easier, 0=same, 1=much harder)' }
-          }
-        },
-        maxOutputTokens: 100,
-      },
-    });
-
-    const wpm = metrics.secondsRead > 0 ? (metrics.wordCount / metrics.secondsRead) * 60 : 0;
-    
-    const prompt = `Student Metrics:
-- ELO Score (0-5000): ${metrics.elo}
-- Reading Speed (WPM): ${wpm.toFixed(0)}
-- Text Complexity Index (1.0 - 5.0): ${metrics.complexity}
-- Target Reading Level: ${metrics.readingLevel}`;
-
-    const resp = await generativeModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    
-    if (!resp.response.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error('Empty response from Vertex AI');
-    }
-
-    const text = resp.response.candidates[0].content.parts[0].text;
-    const parsed = JSON.parse(text);
-    
-    const comp = Number(parsed.predictedComprehension);
-    const adjust = Number(parsed.recommendedComplexityAdjust);
-
-    let guidance = `ML Insight: The Vertex AI model predicts a user comprehension rate of ${(comp * 100).toFixed(0)}%. `;
-    if (adjust > 0.3) {
-      guidance += "The user is finding this easy. Make the inference and vocabulary questions slightly more challenging.";
-    } else if (adjust < -0.3) {
-      guidance += "The user might be struggling with the complexity or skimming too fast. Keep the questions highly focused on core recall facts, and simplify the vocabulary.";
-    } else {
-      guidance += "The user is in the optimal learning zone. Maintain the current level of difficulty.";
-    }
-
-    return {
-      predictedComprehension: isNaN(comp) ? defaultOutput.predictedComprehension : Math.max(0, Math.min(1, comp)),
-      recommendedComplexityAdjust: isNaN(adjust) ? defaultOutput.recommendedComplexityAdjust : Math.max(-1, Math.min(1, adjust)),
-      promptGuidance: guidance,
-    };
-    } catch (error) {
-    logger.error({ err: error }, 'Vertex AI prediction failed, using fallback');
-    return defaultOutput;
-  }
 }
 
 export interface RecommendationRequest {
@@ -115,7 +100,7 @@ export interface RecommendedContent {
 }
 
 export async function generateContentRecommendations(req: RecommendationRequest): Promise<RecommendedContent[]> {
-  const fallback = [
+  const fallback: RecommendedContent[] = [
     {
       title: "The History of Space Exploration",
       topic: "Science",
@@ -127,55 +112,47 @@ export async function generateContentRecommendations(req: RecommendationRequest)
       topic: "Finance",
       reason: "A great next step to build your foundational knowledge.",
       estimatedComplexity: 2.8,
-    }
+    },
+    {
+      title: "The Psychology of Habit Formation",
+      topic: "Psychology",
+      reason: "Connects to your reading habit journey and builds self-awareness.",
+      estimatedComplexity: 2.3,
+    },
   ];
 
-  if (!vertexAiClient) {
-    return fallback;
-  }
+  // Build a stable cache key from the user profile signature
+  const profileHash = createHash('sha256')
+    .update(JSON.stringify({
+      eloBucket: Math.floor(req.elo / 500) * 500, // bucket ELO to increase cache hits
+      readingLevel: req.readingLevel,
+      interests: [...req.interests].sort(),
+      recentTopics: [...req.recentTopics].sort(),
+    }))
+    .digest('hex')
+    .slice(0, 16);
 
-  try {
-    const generativeModel = vertexAiClient.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      systemInstruction: {
-        role: 'system',
-        parts: [{ text: "You are an AI reading tutor and content recommender. Based on the student's profile, recommend exactly 3 specific book topics, articles, or reading areas that will help them improve their reading comprehension while staying engaged." }]
-      },
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: SchemaType.ARRAY,
-          items: {
-            type: SchemaType.OBJECT,
-            properties: {
-              title: { type: SchemaType.STRING, description: 'A catchy, descriptive title for the recommended reading' },
-              topic: { type: SchemaType.STRING, description: 'The general subject area' },
-              reason: { type: SchemaType.STRING, description: 'Why this is recommended for their specific ELO and interests' },
-              estimatedComplexity: { type: SchemaType.NUMBER, description: 'Complexity number from 1.0 to 5.0' },
-            }
-          }
-        },
-        maxOutputTokens: 600,
-      },
-    });
-
-    const prompt = `Student Profile:
+  const prompt = `Student Profile:
 - ELO Score (0-5000): ${req.elo}
 - Target Reading Level: ${req.readingLevel}
 - Expressed Interests: ${req.interests.join(", ") || "General knowledge"}
 - Recently Read Topics: ${req.recentTopics.join(", ") || "None"}`;
 
-    const resp = await generativeModel.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  const systemInstruction = 'You are an AI reading tutor. Recommend exactly 3 specific book topics or reading areas. Return a JSON array of objects with fields: title (string), topic (string), reason (string), estimatedComplexity (number 1.0–5.0).';
+
+  try {
+    const result = await aiGateway.generate({
+      purpose: 'recommendation',
+      priority: 'optional',
+      cacheKey: `rec:${profileHash}`,
+      cacheTtlMs: 24 * 60 * 60 * 1000, // 24 hours
+      prompt,
+      systemInstruction,
+      maxOutputTokens: 600,
+      fallbackFn: () => JSON.stringify(fallback),
     });
 
-    if (!resp.response.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error('Empty response from Vertex AI');
-    }
-
-    const text = resp.response.candidates[0].content.parts[0].text;
-    const parsed = JSON.parse(text);
-
+    const parsed = JSON.parse(result.text);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed.map((item: any) => ({
         title: String(item.title || "Recommended Reading"),
@@ -186,7 +163,8 @@ export async function generateContentRecommendations(req: RecommendationRequest)
     }
     return fallback;
   } catch (error) {
-    logger.error({ err: error }, 'Vertex AI recommendation failed, using fallback');
+    logger.warn({ err: error }, 'Recommendation generation failed, using fallback');
     return fallback;
   }
 }
+

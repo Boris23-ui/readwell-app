@@ -24,8 +24,8 @@ function NativeTabLayout() {
         <Label>Stats</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="messages">
-        <Icon sf={{ default: 'message', selected: 'message.fill' }} />
-        <Label>Messages</Label>
+        <Icon sf={{ default: 'sparkles', selected: 'sparkles' }} />
+        <Label>Coach</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="leaderboard">
         <Icon sf={{ default: 'list.number', selected: 'list.number' }} />
@@ -111,12 +111,12 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          title: 'Chat',
+          title: 'Coach',
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="message" tintColor={color} size={24} />
+              <SymbolView name="sparkles" tintColor={color} size={24} />
             ) : (
-              <Feather name="message-circle" size={22} color={color} />
+              <Feather name="cpu" size={22} color={color} />
             ),
         }}
       />

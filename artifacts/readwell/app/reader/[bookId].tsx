@@ -8,6 +8,7 @@ import {
   Animated,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import PdfReader from '@/components/PdfReader';
+import { CoachChatView } from '@/components/CoachChatView';
 import { simplifyText } from '@/utils/api';
 
 export default function ReaderScreen() {
@@ -27,6 +29,7 @@ export default function ReaderScreen() {
   const book = getBookById(bookId ?? '');
 
   const [showFinishCard, setShowFinishCard] = useState(false);
+  const [showCoachModal, setShowCoachModal] = useState(false);
   const [isSimplifying, setIsSimplifying] = useState(false);
   const [simplifiedText, setSimplifiedText] = useState<string | null>(null);
   const [sessionStart] = useState(Date.now());
@@ -177,8 +180,20 @@ export default function ReaderScreen() {
             </Text>
           </View>
         </View>
-        <View style={styles.headerBtn}>
-          <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowCoachModal(true);
+            }}
+            style={[styles.coachHeaderBtn, { backgroundColor: `${colors.primary}18` }]}
+          >
+            <Text style={{ fontSize: 14 }}>🦉</Text>
+            <Text style={[styles.coachHeaderBtnText, { color: colors.primary }]}>Coach</Text>
+          </TouchableOpacity>
+          <View style={styles.headerBtn}>
+            <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+          </View>
         </View>
       </View>
 
@@ -236,6 +251,23 @@ export default function ReaderScreen() {
             <Feather name="zap" size={16} color={book.coverColor} />
             <Text style={[styles.simplifyBtnText, { color: book.coverColor }]}>
               {isSimplifying ? 'Simplifying...' : 'Simplify Section (Cost: 1 Token)'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Ask Coach Discuss Button */}
+        {!showFinishCard && (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowCoachModal(true);
+            }}
+            style={[styles.coachDiscussBtn, { borderColor: book.coverColor, backgroundColor: `${book.coverColor}12` }]}
+            activeOpacity={0.8}
+          >
+            <Text style={{ fontSize: 18 }}>🦉</Text>
+            <Text style={[styles.coachDiscussBtnText, { color: book.coverColor }]}>
+              Discuss this chapter with Coach
             </Text>
           </TouchableOpacity>
         )}
@@ -305,6 +337,26 @@ export default function ReaderScreen() {
           </TouchableOpacity>
         </Animated.View>
       )}
+
+      {/* Coach Chat Sheet Modal */}
+      <Modal
+        visible={showCoachModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCoachModal(false)}
+      >
+        <CoachChatView
+          isModal
+          onClose={() => setShowCoachModal(false)}
+          initialBookContext={{
+            bookId: book.id,
+            title: book.title,
+            author: book.author,
+            chapter: segmentIndex + 1,
+            segmentText: segment?.paragraphs?.join('\n\n')?.slice(0, 1500),
+          }}
+        />
+      </Modal>
     </View>
   );
 }
@@ -444,4 +496,30 @@ const styles = StyleSheet.create({
   quizBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
   skipBtn: { paddingVertical: 10 },
   skipBtnText: { fontSize: 14, fontFamily: 'Inter_400Regular' },
+  coachHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  coachHeaderBtnText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  coachDiscussBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    marginTop: 18,
+  },
+  coachDiscussBtnText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
 });

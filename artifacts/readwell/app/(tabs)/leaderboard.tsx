@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../utils/firebase';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  ActivityIndicator,
+  TouchableOpacity,
+  Platform,
+} from 'react-native';
+import { getLeaderboardFromDb } from '../../utils/supabaseDb';
 import { useAuth } from '../../context/AuthContext';
 import { UserProfile } from '../../types';
 import { Feather } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeInUp, ZoomIn } from 'react-native-reanimated';
+import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { getLeague } from '../../utils/xp';
 import { useColors } from '../../hooks/useColors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,25 +26,22 @@ export default function LeaderboardScreen() {
   const { user: currentUser } = useAuth();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  
+
   const [users, setUsers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, orderBy('elo', 'desc'), limit(50));
-        const querySnapshot = await getDocs(q);
-        
-        const fetchedUsers = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as LeaderboardUser[];
-        
-        setUsers(fetchedUsers);
+        const fetchedUsers = await getLeaderboardFromDb(50);
+        setUsers(
+          fetchedUsers.map(u => ({
+            id: u.uid || u.name,
+            ...u,
+          }))
+        );
       } catch (error) {
-        console.error("Error fetching leaderboard: ", error);
+        console.error('Error fetching leaderboard: ', error);
       } finally {
         setLoading(false);
       }
@@ -47,125 +50,420 @@ export default function LeaderboardScreen() {
     fetchLeaderboard();
   }, []);
 
-  const renderItem = ({ item, index }: { item: LeaderboardUser, index: number }) => {
+  const renderItem = ({ item, index }: { item: LeaderboardUser; index: number }) => {
     const isCurrentUser = item.id === currentUser?.uid;
     const elo = item.elo || 100;
     const league = getLeague(elo);
-    
-    // Dynamic premium backgrounds for top 3
-    const getBgColors = () => {
-      if (index === 0) return ['#FFD70033', colors.card];
-      if (index === 1) return ['#C0C0C033', colors.card];
-      if (index === 2) return ['#CD7F3233', colors.card];
-      return [colors.card, colors.card];
+
+    // Dynamic accent border per rank tier
+    const getBorderAccent = () => {
+      if (index === 0) return '#E8C46B';
+      if (index === 1) return '#8FB0D4';
+      if (index === 2) return '#CF6D4D';
+      return colors.border;
     };
-    
+
     return (
-      <Animated.View entering={FadeInDown.delay(index * 50).springify()}>
-        <TouchableOpacity 
-          activeOpacity={0.8}
+      <Animated.View entering={FadeInDown.delay(index * 40).springify()}>
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={() => Haptics.selectionAsync()}
-          style={[styles.userRowContainer, { shadowColor: colors.shadow }]}
+          style={styles.userRowContainer}
         >
-          <LinearGradient
-            colors={getBgColors()}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          <View
             style={[
-              styles.userRow, 
-              { borderColor: colors.border, backgroundColor: colors.card },
-              isCurrentUser && { borderColor: colors.primary, borderWidth: 1.5 },
-              index < 3 && { borderColor: `${getBgColors()[0]}99` }
+              styles.feltUserCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: isCurrentUser ? colors.primary : `${getBorderAccent()}88`,
+                shadowColor: colors.shadow,
+              },
+              isCurrentUser && { borderWidth: 2.5 },
             ]}
           >
-            <View style={styles.rankContainer}>
-              {index === 0 ? <Animated.Text entering={ZoomIn.delay(200)} style={styles.emoji}>👑</Animated.Text> :
-               index === 1 ? <Animated.Text entering={ZoomIn.delay(300)} style={styles.emoji}>🥈</Animated.Text> :
-               index === 2 ? <Animated.Text entering={ZoomIn.delay(400)} style={styles.emoji}>🥉</Animated.Text> :
-               <Text style={[styles.rankText, { color: colors.mutedForeground }]}>#{index + 1}</Text>}
+            {/* Rank Badge */}
+            <View style={styles.rankBadge}>
+              {index === 0 ? (
+                <Animated.Text entering={ZoomIn.delay(100)} style={styles.trophyEmoji}>
+                  👑
+                </Animated.Text>
+              ) : index === 1 ? (
+                <Animated.Text entering={ZoomIn.delay(150)} style={styles.trophyEmoji}>
+                  🥈
+                </Animated.Text>
+              ) : index === 2 ? (
+                <Animated.Text entering={ZoomIn.delay(200)} style={styles.trophyEmoji}>
+                  🥉
+                </Animated.Text>
+              ) : (
+                <Text style={[styles.rankNumberText, { color: colors.mutedForeground }]}>
+                  #{index + 1}
+                </Text>
+              )}
             </View>
-            
-            <View style={styles.userInfo}>
-              <Text style={[styles.userName, { color: colors.foreground }, isCurrentUser && { color: colors.primary }]}>
-                {item.name || item.displayName || 'Anonymous Reader'} {isCurrentUser && '(You)'}
-              </Text>
-              <View style={styles.leagueContainer}>
+
+            {/* Reader Identity */}
+            <View style={styles.readerInfo}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text
+                  style={[
+                    styles.readerName,
+                    { color: colors.foreground },
+                    isCurrentUser && { color: colors.primary, fontFamily: 'Inter_700Bold' },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.name || item.displayName || 'Anonymous Reader'}
+                </Text>
+                {isCurrentUser && (
+                  <View style={[styles.youBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.youBadgeText}>YOU</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.leagueRow}>
                 <Text style={styles.leagueEmoji}>{league.icon}</Text>
-                <Text style={[styles.leagueText, { color: league.color }]}>{league.name}</Text>
+                <Text style={[styles.leagueLabel, { color: league.color }]}>
+                  {league.name.toUpperCase()}
+                </Text>
               </View>
             </View>
-            
-            <View style={styles.xpContainer}>
-              <Text style={[styles.xpText, { color: index === 0 ? '#F59E0B' : index === 1 ? '#9CA3AF' : index === 2 ? '#D97706' : colors.primary }]}>
-                {elo.toLocaleString()} ELO
+
+            {/* ELO Rating */}
+            <View style={styles.eloBox}>
+              <Text
+                style={[
+                  styles.eloScore,
+                  {
+                    color:
+                      index === 0
+                        ? '#B98F2F'
+                        : index === 1
+                        ? '#52789F'
+                        : index === 2
+                        ? '#CF6D4D'
+                        : colors.foreground,
+                  },
+                ]}
+              >
+                {elo.toLocaleString()}
               </Text>
+              <Text style={[styles.eloLabelMono, { color: colors.mutedForeground }]}>ELO</Text>
             </View>
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
       </Animated.View>
     );
   };
 
+  const topPad = Platform.OS === 'web' ? 44 : insets.top + 8;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Animated.View entering={FadeInDown.springify()} style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border, paddingTop: Math.max(insets.top, 20) }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Global Ranking</Text>
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Compete by reading complex material.</Text>
-      </Animated.View>
-
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={users}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <Animated.View entering={FadeInUp.springify()} style={styles.emptyContainer}>
-              <View style={[styles.emptyIconCircle, { backgroundColor: colors.muted }]}>
-                <Feather name="award" size={48} color={colors.mutedForeground} />
+      <FlatList
+        data={users}
+        keyExtractor={item => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={[styles.listContainer, { paddingTop: topPad, paddingBottom: 110 }]}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <Animated.View entering={FadeInDown.springify()} style={styles.headerHeroWrapper}>
+            {/* Pattern Marathon Style Banner */}
+            <View
+              style={[
+                styles.marathonFeltHero,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: `${colors.slateDeep}66`,
+                  shadowColor: colors.shadow,
+                },
+              ]}
+            >
+              <View style={styles.heroTopTagRow}>
+                <Text style={[styles.seasonTag, { color: colors.slateDeep }]}>
+                  SEASON 2 · THE PATTERN MARATHON
+                </Text>
+                <View style={[styles.ladderPill, { backgroundColor: `${colors.slateDeep}18` }]}>
+                  <Text style={[styles.ladderPillText, { color: colors.slateDeep }]}>
+                    ADK 2 LADDER
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.emptyText, { color: colors.foreground }]}>No readers found.</Text>
-              <Text style={[styles.emptySubText, { color: colors.mutedForeground }]}>Start reading to appear on the leaderboard!</Text>
-            </Animated.View>
-          }
-        />
-      )}
+
+              <Text style={[styles.displayTitle, { color: colors.foreground }]}>
+                The Reading <Text style={{ color: colors.slateDeep }}>Marathon</Text>
+              </Text>
+
+              <Text style={[styles.marathonSubtitle, { color: colors.mutedForeground }]}>
+                Ten stages, one question: who decides what you read next? The syllabus you
+                drew, the Socratic AI, or your habits at runtime.
+              </Text>
+
+              {/* 3 Pillars Chips */}
+              <View style={styles.pillarsRow}>
+                <View style={[styles.pillarChip, { backgroundColor: `${colors.slateDeep}15` }]}>
+                  <Text style={[styles.pillarText, { color: colors.slateDeep }]}>
+                    P1 · GRAPH (Syllabus)
+                  </Text>
+                </View>
+                <View style={[styles.pillarChip, { backgroundColor: `${colors.sageDeep}15` }]}>
+                  <Text style={[styles.pillarText, { color: colors.sageDeep }]}>
+                    P2 · COLLAB (Socratic AI)
+                  </Text>
+                </View>
+                <View style={[styles.pillarChip, { backgroundColor: `${colors.honeyDeep}15` }]}>
+                  <Text style={[styles.pillarText, { color: colors.honeyDeep }]}>
+                    P3 · DYNAMIC (Habits)
+                  </Text>
+                </View>
+              </View>
+
+              {/* Course Checkpoint Rail */}
+              <View style={[styles.courseTrack, { backgroundColor: colors.muted }]}>
+                <View style={styles.courseHeader}>
+                  <Text style={[styles.courseLabel, { color: colors.mutedForeground }]}>
+                    THE EXPEDITION COURSE
+                  </Text>
+                  <Text style={[styles.courseSteps, { color: colors.slateDeep }]}>
+                    L0 → L1 → L2 → L3 → L4 → L5 🏁
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.subHeadingRow}>
+              <Text style={[styles.rankSectionTitle, { color: colors.foreground }]}>
+                Floor Rankings
+              </Text>
+              <Text style={[styles.rankSectionSub, { color: colors.mutedForeground }]}>
+                Ranked by text complexity & retention ELO
+              </Text>
+            </View>
+          </Animated.View>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View style={styles.centerLoading}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <View style={[styles.emptyIconCircle, { backgroundColor: colors.muted }]}>
+                <Feather name="award" size={42} color={colors.mutedForeground} />
+              </View>
+              <Text style={[styles.emptyText, { color: colors.foreground }]}>
+                No readers on the marathon floor yet
+              </Text>
+              <Text style={[styles.emptySubText, { color: colors.mutedForeground }]}>
+                Complete reading sessions and quizzes to log your initial ELO score!
+              </Text>
+            </View>
+          )
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    padding: 24,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
+  listContainer: { paddingHorizontal: 20 },
+  headerHeroWrapper: {
+    marginBottom: 16,
   },
-  title: { fontSize: 32, fontFamily: 'Newsreader_700Bold', letterSpacing: -0.5 },
-  subtitle: { fontSize: 15, fontFamily: 'Inter_400Regular', marginTop: 6, opacity: 0.8 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  listContainer: { padding: 16, paddingBottom: 100 },
-  userRowContainer: { marginBottom: 12, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  userRow: {
-    flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, borderWidth: 1, overflow: 'hidden'
+  marathonFeltHero: {
+    borderRadius: 26,
+    borderWidth: 2,
+    padding: 22,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
+    gap: 12,
   },
-  rankContainer: { width: 44, alignItems: 'center', marginRight: 12 },
-  emoji: { fontSize: 28 },
-  rankText: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
-  userInfo: { flex: 1 },
-  userName: { fontSize: 16, fontFamily: 'Inter_600SemiBold', marginBottom: 4 },
-  leagueContainer: { flexDirection: 'row', alignItems: 'center' },
-  leagueEmoji: { fontSize: 14, marginRight: 6 },
-  leagueText: { fontSize: 13, fontFamily: 'Inter_500Medium' },
-  xpContainer: { alignItems: 'flex-end', paddingLeft: 10 },
-  xpText: { fontSize: 17, fontFamily: 'Newsreader_700Bold' },
-  emptyContainer: { padding: 40, alignItems: 'center', marginTop: 40 },
-  emptyIconCircle: { width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  emptyText: { fontSize: 18, fontFamily: 'Inter_600SemiBold', marginBottom: 8 },
-  emptySubText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  heroTopTagRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  seasonTag: {
+    fontSize: 10.5,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+  },
+  ladderPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  ladderPillText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  displayTitle: {
+    fontSize: 32,
+    fontFamily: 'Newsreader_700Bold',
+    lineHeight: 38,
+    letterSpacing: -0.5,
+  },
+  marathonSubtitle: {
+    fontSize: 13.5,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 21,
+  },
+  pillarsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
+  },
+  pillarChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  pillarText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  courseTrack: {
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 4,
+  },
+  courseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  courseLabel: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1,
+  },
+  courseSteps: {
+    fontSize: 10.5,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  subHeadingRow: {
+    marginTop: 24,
+    marginBottom: 12,
+    gap: 2,
+  },
+  rankSectionTitle: {
+    fontSize: 22,
+    fontFamily: 'Newsreader_700Bold',
+  },
+  rankSectionSub: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  userRowContainer: {
+    marginBottom: 12,
+  },
+  feltUserCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 20,
+    borderWidth: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
+    gap: 12,
+  },
+  rankBadge: {
+    width: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  trophyEmoji: {
+    fontSize: 24,
+  },
+  rankNumberText: {
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+  },
+  readerInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  readerName: {
+    fontSize: 15,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  youBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  youBadgeText: {
+    color: '#FFFDF8',
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  leagueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  leagueEmoji: {
+    fontSize: 13,
+  },
+  leagueLabel: {
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.8,
+  },
+  eloBox: {
+    alignItems: 'flex-end',
+    paddingLeft: 8,
+  },
+  eloScore: {
+    fontSize: 18,
+    fontFamily: 'Newsreader_700Bold',
+    lineHeight: 22,
+  },
+  eloLabelMono: {
+    fontSize: 9.5,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.8,
+  },
+  centerLoading: {
+    padding: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 8,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 17,
+    fontFamily: 'Newsreader_700Bold',
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    maxWidth: 280,
+    lineHeight: 18,
+  },
 });

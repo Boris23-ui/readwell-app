@@ -2,18 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/utils/firebase';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { getSponsorLearners, linkLearnerByEmail } from '@/utils/supabaseDb';
 import { UserProfile } from '@/types';
 import { useRouter } from 'expo-router';
-import { UserPlus, ChevronRight } from 'lucide-react-native';
+import { UserPlus, ChevronRight, Users, LogOut } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
 export default function SponsorLearnersScreen() {
   const colors = useColors();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const router = useRouter();
   
   const [learners, setLearners] = useState<UserProfile[]>([]);
@@ -24,9 +23,7 @@ export default function SponsorLearnersScreen() {
   const fetchLearners = async () => {
     if (!user) return;
     try {
-      const q = query(collection(db, 'users'), where('sponsorId', '==', user.uid));
-      const snap = await getDocs(q);
-      const fetched = snap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
+      const fetched = await getSponsorLearners(user.uid);
       setLearners(fetched);
     } catch (error) {
       console.error('Error fetching learners', error);
@@ -44,33 +41,18 @@ export default function SponsorLearnersScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLinking(true);
     try {
-      // Find the user by email
-      const q = query(collection(db, 'users'), where('email', '==', linkEmail.trim().toLowerCase()));
-      const snap = await getDocs(q);
-      
-      if (snap.empty) {
-        Alert.alert('Error', 'No learner found with that email.');
+      const result = await linkLearnerByEmail(user.uid, linkEmail.trim());
+      if (!result.success) {
+        Alert.alert('Error', result.message || 'Could not link learner.');
         return;
       }
-      
-      const learnerDoc = snap.docs[0];
-      const learnerData = learnerDoc.data() as UserProfile;
-      
-      if (learnerData.role === 'sponsor') {
-        Alert.alert('Error', 'Cannot link another sponsor account as a learner.');
-        return;
-      }
-
-      await updateDoc(doc(db, 'users', learnerDoc.id), {
-        sponsorId: user.uid
-      });
       
       Alert.alert('Success', 'Learner linked successfully!');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setLinkEmail('');
       fetchLearners();
     } catch (error: any) {
-      Alert.alert('Error linking learner', error.message);
+      Alert.alert('Error linking learner', error.message || 'Failed to link');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLinking(false);
@@ -106,9 +88,23 @@ export default function SponsorLearnersScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Animated.Text entering={FadeInDown.springify()} style={[styles.header, { color: colors.text }]}>
-        My Learners
-      </Animated.Text>
+      <View style={styles.headerRow}>
+        <Animated.Text entering={FadeInDown.springify()} style={[styles.header, { color: colors.text }]}>
+          My Learners
+        </Animated.Text>
+        <TouchableOpacity
+          style={[styles.signOutBtn, { borderColor: colors.border }]}
+          onPress={() => {
+            Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
+            ]);
+          }}
+          activeOpacity={0.7}
+        >
+          <LogOut size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
       
       <Animated.View entering={FadeInDown.delay(100).springify()} style={[styles.linkContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <LinearGradient
@@ -150,7 +146,7 @@ export default function SponsorLearnersScreen() {
       ) : (
         <FlatList
           data={learners}
-          keyExtractor={(item) => item.uid}
+          keyExtractor={(item, index) => item.uid || String(index)}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -166,10 +162,23 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 60,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
   header: {
     fontSize: 28,
     fontFamily: 'Newsreader_700Bold',
-    marginBottom: 24,
+  },
+  signOutBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   linkContainer: {
     padding: 20,

@@ -33,6 +33,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import { Book } from '@/types';
 import { resolveStorageUrl } from '@/utils/api';
+import { CoachChatView } from './CoachChatView';
 
 const DEFAULT_ASPECT = 0.7727; // A4 portrait width/height fallback
 
@@ -146,6 +147,7 @@ export default function PdfReader({ book }: { book: Book }) {
   const { width } = useWindowDimensions();
 
   const [showFinishCard, setShowFinishCard] = useState(false);
+  const [showCoachModal, setShowCoachModal] = useState(false);
   const [sessionStart] = useState(Date.now());
   const [elapsed, setElapsed] = useState(0);
   const [zoomPage, setZoomPage] = useState<{ uri: string; aspect: number } | null>(null);
@@ -313,7 +315,19 @@ export default function PdfReader({ book }: { book: Book }) {
             Page {visiblePage} of {totalPages}
           </Text>
         </View>
-        <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowCoachModal(true);
+            }}
+            style={[styles.coachHeaderBtn, { backgroundColor: `${colors.primary}18` }]}
+          >
+            <Text style={{ fontSize: 13 }}>🦉</Text>
+            <Text style={[styles.coachHeaderBtnText, { color: colors.primary }]}>Coach</Text>
+          </TouchableOpacity>
+          <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+        </View>
       </View>
 
       {/* Progress bar */}
@@ -375,14 +389,14 @@ export default function PdfReader({ book }: { book: Book }) {
                 />
                 {failedPages.has(page.pageNumber) && (
                   <View style={styles.imageErrorOverlay} pointerEvents="none">
-                    <Feather name="image" size={20} color="#EF4444" />
-                    <Text style={styles.imageErrorText}>Could not load page</Text>
+                    <Feather name="image" size={20} color={colors.destructive} />
+                    <Text style={[styles.imageErrorText, { color: colors.destructive }]}>Could not load page</Text>
                   </View>
                 )}
                 {page.lowConfidence && (
-                  <View style={styles.lowConfidenceBadge} pointerEvents="none">
-                    <Feather name="alert-triangle" size={12} color="#92400E" />
-                    <Text style={styles.lowConfidenceBadgeText}>
+                  <View style={[styles.lowConfidenceBadge, { backgroundColor: `${colors.honey}30`, borderColor: colors.honeyDeep }]} pointerEvents="none">
+                    <Feather name="alert-triangle" size={12} color={colors.honeyDeep} />
+                    <Text style={[styles.lowConfidenceBadgeText, { color: colors.honeyDeep }]}>
                       Blurry scan — quiz questions may be limited
                     </Text>
                   </View>
@@ -489,6 +503,26 @@ export default function PdfReader({ book }: { book: Book }) {
       {zoomPage && (
         <ZoomOverlay uri={zoomPage.uri} aspect={zoomPage.aspect} onClose={() => setZoomPage(null)} />
       )}
+
+      {/* Coach Chat Sheet Modal */}
+      <Modal
+        visible={showCoachModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCoachModal(false)}
+      >
+        <CoachChatView
+          isModal
+          onClose={() => setShowCoachModal(false)}
+          initialBookContext={{
+            bookId: book.id,
+            title: book.title,
+            author: book.author,
+            chapter: visiblePage,
+            segmentText: `Page ${visiblePage} of ${book.title}`,
+          }}
+        />
+      </Modal>
     </View>
   );
 }
@@ -665,7 +699,17 @@ const styles = StyleSheet.create({
   },
   imageErrorText: {
     fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-    color: '#EF4444',
+  },
+  coachHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  coachHeaderBtnText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

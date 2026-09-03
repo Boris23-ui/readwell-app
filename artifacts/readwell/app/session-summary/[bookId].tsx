@@ -10,16 +10,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
+import { useCoach } from '@/context/CoachContext';
 import { BadgeItem } from '@/components/BadgeItem';
 import { BadgeKey, BADGE_INFO } from '@/types';
 import { calculateEloGain } from '@/utils/xp';
 
 export default function SessionSummaryScreen() {
+  const coach = useCoach();
   const params = useLocalSearchParams<{
     bookId: string;
     segmentIndex: string;
@@ -105,6 +106,9 @@ export default function SessionSummaryScreen() {
       if (result.newBadges.length > 0 || profile.streakCurrent > 0) {
         setShowStreak(true);
       }
+
+      // Notify Coach Agent to evolve reading strategy
+      coach?.evolveStrategy(`Session completed on "${book.title}". Score: ${comprehensionScore}%, XP: ${xpEarned}, Time: ${secondsRead}s.`).catch(() => {});
     };
 
     save();
@@ -138,7 +142,7 @@ export default function SessionSummaryScreen() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <TouchableOpacity onPress={() => router.replace('/(tabs)')}>
-          <Text style={[styles.link, { color: colors.primary }]}>Back to Home</Text>
+          <Text style={[styles.link, { color: colors.terracotta }]}>Back to Home</Text>
         </TouchableOpacity>
       </View>
     );
@@ -153,6 +157,10 @@ export default function SessionSummaryScreen() {
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 20;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom + 16;
 
+  // Determine score-tier accent
+  const scoreAccent = comprScore >= 80 ? colors.sageDeep : comprScore >= 60 ? colors.honeyDeep : colors.terracotta;
+  const scoreAccentBg = comprScore >= 80 ? `${colors.sage}30` : comprScore >= 60 ? `${colors.honey}30` : `${colors.terracotta}30`;
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -160,27 +168,28 @@ export default function SessionSummaryScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
-        {/* Score hero */}
+        {/* Score hero — Felt circle instead of gradient */}
         <View style={styles.hero}>
           {wasSkipped ? (
-            <View style={[styles.scoreCircle, { backgroundColor: `${colors.muted}` }]}>
+            <View style={[styles.scoreCircle, { backgroundColor: colors.muted }]}>
               <Feather name="skip-forward" size={36} color={colors.mutedForeground} />
             </View>
           ) : (
-            <LinearGradient
-              colors={
-                comprScore >= 80
-                  ? ['#22C55E', '#16A34A']
-                  : comprScore >= 60
-                  ? [book.coverColor, `${book.coverColor}CC`]
-                  : ['#F97316', '#EF4444']
-              }
-              style={styles.scoreCircle}
+            <View
+              style={[
+                styles.scoreCircle,
+                {
+                  backgroundColor: scoreAccentBg,
+                  borderColor: `${scoreAccent}66`,
+                  borderWidth: 3,
+                },
+              ]}
             >
-              <Text style={styles.scoreNum}>{wasSkipped ? '—' : score}/{total > 0 ? total - 1 : 0}</Text>
-              <Text style={styles.scoreLabel}>score</Text>
-            </LinearGradient>
+              <Text style={[styles.scoreNum, { color: scoreAccent }]}>{wasSkipped ? '—' : score}/{total > 0 ? total - 1 : 0}</Text>
+              <Text style={[styles.scoreLabelMono, { color: `${scoreAccent}99` }]}>SCORE</Text>
+            </View>
           )}
+
           <Text style={[styles.summaryTitle, { color: colors.foreground }]}>
             {wasSkipped
               ? 'Segment Complete'
@@ -190,62 +199,69 @@ export default function SessionSummaryScreen() {
               ? 'Good reading!'
               : 'Keep going!'}
           </Text>
+
           {isBookFinished && (
-            <View style={[styles.finishedBadge, { backgroundColor: '#22C55E20', borderColor: '#22C55E' }]}>
-              <Feather name="check-circle" size={14} color="#22C55E" />
-              <Text style={[styles.finishedBadgeText, { color: '#22C55E' }]}>Book Finished!</Text>
+            <View style={[styles.finishedBadge, { backgroundColor: `${colors.sage}22`, borderColor: `${colors.sageDeep}66` }]}>
+              <Feather name="check-circle" size={14} color={colors.sageDeep} />
+              <Text style={[styles.finishedBadgeText, { color: colors.sageDeep }]}>BOOK FINISHED!</Text>
             </View>
           )}
         </View>
 
-        {/* Stats cards */}
+        {/* Stats cards — felt cards */}
         <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="clock" size={18} color={colors.primary} />
+          <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.terracotta}55`, shadowColor: colors.shadow }]}>
+            <Feather name="clock" size={18} color={colors.terracotta} />
             <Text style={[styles.statVal, { color: colors.foreground }]}>
               {minutesRead > 0 ? `${minutesRead}m` : `${secondsRead}s`}
             </Text>
-            <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>reading time</Text>
+            <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>TIME</Text>
           </View>
 
           {!wasSkipped && (
-            <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Feather name="bar-chart-2" size={18} color="#8B5CF6" />
+            <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.slateDeep}55`, shadowColor: colors.shadow }]}>
+              <Feather name="bar-chart-2" size={18} color={colors.slateDeep} />
               <Text style={[styles.statVal, { color: colors.foreground }]}>{comprScore}%</Text>
-              <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>comprehension</Text>
+              <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>COMPR.</Text>
             </View>
           )}
 
           {!wasSkipped && (
-            <View style={[styles.statCard, { backgroundColor: '#3B82F615', borderColor: '#3B82F640' }]}>
-              <Feather name="trending-up" size={18} color="#3B82F6" />
-              <Animated.Text style={[styles.statVal, { color: '#3B82F6' }]}>
+            <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.honey}55`, shadowColor: colors.shadow }]}>
+              <Feather name="trending-up" size={18} color={colors.honeyDeep} />
+              <Animated.Text style={[styles.statVal, { color: colors.honeyDeep }]}>
                 +{eloEarnedDisplay}
               </Animated.Text>
-              <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>ELO gained</Text>
+              <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>ELO</Text>
             </View>
           )}
 
-          <View style={[styles.statCard, { backgroundColor: '#8B5CF615', borderColor: '#8B5CF640' }]}>
-            <Feather name="zap" size={18} color="#8B5CF6" />
-            <Animated.Text style={[styles.statVal, { color: '#8B5CF6' }]}>
+          <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.sage}55`, shadowColor: colors.shadow }]}>
+            <Feather name="zap" size={18} color={colors.sageDeep} />
+            <Animated.Text style={[styles.statVal, { color: colors.sageDeep }]}>
               {xpEarned > 0 ? `+${xpEarned}` : '0'}
             </Animated.Text>
-            <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>XP earned</Text>
+            <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>XP</Text>
           </View>
           
           {earnedToken && (
-            <View style={[styles.statCard, { backgroundColor: '#EAB30815', borderColor: '#EAB30840' }]}>
-              <Feather name="plus-circle" size={18} color="#EAB308" />
-              <Animated.Text style={[styles.statVal, { color: '#EAB308' }]}>+1</Animated.Text>
-              <Text style={[styles.statLbl, { color: colors.mutedForeground }]}>quiz token</Text>
+            <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.honey}55`, shadowColor: colors.shadow }]}>
+              <Feather name="plus-circle" size={18} color={colors.honeyDeep} />
+              <Animated.Text style={[styles.statVal, { color: colors.honeyDeep }]}>+1</Animated.Text>
+              <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>TOKEN</Text>
             </View>
           )}
         </View>
 
-        {/* New badges */}
+        {/* New badges — felt card */}
         {newBadges.length > 0 && (
-          <View style={[styles.section, styles.badgesCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.section,
+              styles.feltCardLg,
+              { backgroundColor: colors.card, borderColor: `${colors.honey}55`, shadowColor: colors.shadow },
+            ]}
+          >
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
               New Badge{newBadges.length > 1 ? 's' : ''}!
             </Text>
@@ -265,22 +281,22 @@ export default function SessionSummaryScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.replace(`/reader/${book.id}`);
               }}
-              style={[styles.primaryBtn, { backgroundColor: book.coverColor }]}
+              style={[styles.primaryBtn, { backgroundColor: colors.honey }]}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryBtnText}>Continue Reading</Text>
-              <Feather name="arrow-right" size={18} color="#FFF" />
+              <Text style={styles.primaryBtnText}>CONTINUE READING ▸</Text>
+              <Feather name="arrow-right" size={18} color="#1F1C18" />
             </TouchableOpacity>
           )}
 
           <TouchableOpacity
             onPress={() => router.replace('/(tabs)')}
-            style={[styles.secondaryBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[styles.secondaryBtn, { backgroundColor: colors.card, borderColor: `${colors.terracotta}55` }]}
             activeOpacity={0.85}
           >
             <Feather name="home" size={17} color={colors.foreground} />
             <Text style={[styles.secondaryBtnText, { color: colors.foreground }]}>
-              {isBookFinished ? 'Back to Home' : 'Back to Home'}
+              BACK TO THE FLOOR ▸
             </Text>
           </TouchableOpacity>
         </View>
@@ -292,7 +308,7 @@ export default function SessionSummaryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  link: { fontSize: 15, fontFamily: 'Inter_500Medium' },
+  link: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   hero: { alignItems: 'center', paddingHorizontal: 20, gap: 12, marginBottom: 28 },
   scoreCircle: {
     width: 120,
@@ -302,8 +318,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
-  scoreNum: { fontSize: 32, fontFamily: 'Newsreader_700Bold', color: '#FFF' },
-  scoreLabel: { fontSize: 13, fontFamily: 'Inter_400Regular', color: '#FFF9' },
+  scoreNum: { fontSize: 30, fontFamily: 'Newsreader_700Bold' },
+  scoreLabelMono: { fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1.2 },
   summaryTitle: { fontSize: 26, fontFamily: 'Newsreader_700Bold', textAlign: 'center' },
   finishedBadge: {
     flexDirection: 'row',
@@ -312,16 +328,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
-  finishedBadgeText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
-  statsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, marginBottom: 20 },
-  statCard: { flex: 1, borderRadius: 16, borderWidth: 1, padding: 14, alignItems: 'center', gap: 4 },
-  statVal: { fontSize: 22, fontFamily: 'Newsreader_700Bold', marginTop: 2 },
-  statLbl: { fontSize: 11, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  finishedBadgeText: { fontSize: 11, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    flexWrap: 'wrap',
+  },
+  feltStatCard: {
+    flex: 1,
+    minWidth: 70,
+    borderRadius: 22,
+    borderWidth: 2,
+    padding: 14,
+    alignItems: 'center',
+    gap: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  statVal: { fontSize: 20, fontFamily: 'Newsreader_700Bold', lineHeight: 24 },
+  statLblMono: { fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
   section: { marginHorizontal: 20, marginBottom: 16 },
-  badgesCard: { borderRadius: 18, borderWidth: 1, padding: 18, gap: 14 },
-  sectionTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  feltCardLg: {
+    borderRadius: 22,
+    borderWidth: 2,
+    padding: 18,
+    gap: 14,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  sectionTitle: { fontSize: 16, fontFamily: 'Newsreader_700Bold' },
   badgesRow: { flexDirection: 'row', gap: 16, flexWrap: 'wrap' },
   actions: { paddingHorizontal: 20, gap: 12, marginTop: 8 },
   primaryBtn: {
@@ -332,15 +375,24 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
   },
-  primaryBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  primaryBtnText: {
+    color: '#1F1C18',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.1,
+  },
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    borderRadius: 14,
+    borderRadius: 22,
     paddingVertical: 14,
-    borderWidth: 1,
+    borderWidth: 2,
   },
-  secondaryBtnText: { fontSize: 15, fontFamily: 'Inter_500Medium' },
+  secondaryBtnText: {
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.9,
+  },
 });

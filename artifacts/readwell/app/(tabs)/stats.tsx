@@ -43,11 +43,21 @@ export default function StatsScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: botPad + 100 }}
+      contentContainerStyle={{ paddingBottom: botPad + 110 }}
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.header, { paddingTop: topPad }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Stats</Text>
+        <View style={[styles.circuitPill, { borderColor: `${colors.honeyDeep}88` }]}>
+          <Text style={[styles.circuitPillText, { color: colors.honeyDeep }]}>
+            🗺️ THE CIRCUIT MAP · TELEMETRY
+          </Text>
+        </View>
+        <Text style={[styles.title, { color: colors.foreground }]}>
+          Habit & Skill <Text style={{ color: colors.honeyDeep }}>Circuit</Text>
+        </Text>
+        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+          Introspected from your reading runtime — streak momentum, comprehension yields, and badge artifacts.
+        </Text>
       </View>
 
       {/* Stat cards */}
@@ -56,85 +66,147 @@ export default function StatsScreen() {
           <StatCard
             label="Time read"
             value={hoursStr}
-            accent={colors.primary}
-            icon={<Feather name="clock" size={18} color={colors.primary} />}
+            accent={colors.terracotta}
+            icon={<Feather name="clock" size={18} color={colors.terracotta} />}
           />
           <StatCard
             label="Books finished"
             value={finishedBooks}
-            accent="#22C55E"
-            icon={<Feather name="check-circle" size={18} color="#22C55E" />}
+            accent={colors.sageDeep}
+            icon={<Feather name="check-circle" size={18} color={colors.sageDeep} />}
           />
           <StatCard
             label="Avg score"
             value={avgScore > 0 ? `${avgScore}%` : '—'}
-            accent="#8B5CF6"
-            icon={<Feather name="bar-chart-2" size={18} color="#8B5CF6" />}
+            accent={colors.slateDeep}
+            icon={<Feather name="bar-chart-2" size={18} color={colors.slateDeep} />}
           />
         </View>
       </Animated.View>
 
-      {/* Weekly chart */}
-      <Animated.View entering={FadeInDown.delay(100).springify()} layout={Layout.springify()} style={[styles.section, styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {/* Weekly chart — felt card */}
+      <Animated.View
+        entering={FadeInDown.delay(100).springify()}
+        layout={Layout.springify()}
+        style={[
+          styles.section,
+          styles.feltCard,
+          { backgroundColor: colors.card, borderColor: `${colors.honey}55`, shadowColor: colors.shadow },
+        ]}
+      >
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>This week</Text>
         <WeeklyChart activities={dailyActivities} goalMinutes={profile.dailyGoalMinutes} />
       </Animated.View>
 
-      {/* Streak info */}
-      <Animated.View entering={FadeInDown.delay(200).springify()} layout={Layout.springify()} style={[styles.section, styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {/* Streak info — felt card */}
+      <Animated.View
+        entering={FadeInDown.delay(200).springify()}
+        layout={Layout.springify()}
+        style={[
+          styles.section,
+          styles.feltCard,
+          { backgroundColor: colors.card, borderColor: `${colors.terracotta}55`, shadowColor: colors.shadow },
+        ]}
+      >
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>Streak</Text>
         <View style={styles.streakRow}>
           <View style={styles.streakItem}>
-            <Text style={[styles.streakNum, { color: '#EF4444' }]}>{profile.streakCurrent}</Text>
-            <Text style={[styles.streakLabel, { color: colors.mutedForeground }]}>current</Text>
+            <Text style={[styles.streakNum, { color: colors.terracotta }]}>{profile.streakCurrent}</Text>
+            <Text style={[styles.streakLabelMono, { color: colors.mutedForeground }]}>CURRENT</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.streakItem}>
-            <Text style={[styles.streakNum, { color: colors.primary }]}>{profile.streakBest}</Text>
-            <Text style={[styles.streakLabel, { color: colors.mutedForeground }]}>best</Text>
+            <Text style={[styles.streakNum, { color: colors.honeyDeep }]}>{profile.streakBest}</Text>
+            <Text style={[styles.streakLabelMono, { color: colors.mutedForeground }]}>BEST</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.streakItem}>
-            <Text style={[styles.streakNum, { color: '#8B5CF6' }]}>{sessions.length}</Text>
-            <Text style={[styles.streakLabel, { color: colors.mutedForeground }]}>sessions</Text>
+            <Text style={[styles.streakNum, { color: colors.slateDeep }]}>{sessions.length}</Text>
+            <Text style={[styles.streakLabelMono, { color: colors.mutedForeground }]}>SESSIONS</Text>
           </View>
         </View>
       </Animated.View>
 
-      {/* Badges */}
+      {/* Badges — felt card */}
       <Animated.View entering={FadeInUp.delay(300).springify()} layout={Layout.springify()} style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Badges</Text>
-        <View style={[styles.badgesGrid, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.badgesGrid,
+            styles.feltCard,
+            { backgroundColor: colors.card, borderColor: `${colors.sage}55`, shadowColor: colors.shadow },
+          ]}
+        >
           {ALL_BADGES.map(key => (
             <BadgeItem key={key} badgeKey={key} earned={profile.badges.includes(key)} />
           ))}
         </View>
       </Animated.View>
+
+      {/* Footer mantra */}
+      <View style={styles.footerNote}>
+        <Text style={[styles.footerNoteText, { color: colors.mutedForeground }]}>
+          CLICK-DRIVEN · REPLAY-EXACT · SOCRATIC RETENTION — NOTHING MOVES UNTIL YOU DO
+        </Text>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 16 },
-  title: { fontSize: 28, fontFamily: 'Newsreader_700Bold' },
+  header: { paddingHorizontal: 20, paddingBottom: 16, gap: 6 },
+  circuitPill: {
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    marginBottom: 4,
+  },
+  circuitPillText: {
+    fontSize: 10.5,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 0.9,
+  },
+  title: { fontSize: 28, fontFamily: 'Newsreader_700Bold', letterSpacing: -0.3 },
+  subtitle: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
   section: { paddingHorizontal: 20, marginBottom: 16 },
   statRow: { flexDirection: 'row', gap: 10 },
-  card: { borderRadius: 18, borderWidth: 1, padding: 18 },
-  cardTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', marginBottom: 16 },
+  feltCard: {
+    borderRadius: 22,
+    borderWidth: 2,
+    padding: 18,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardTitle: { fontSize: 16, fontFamily: 'Newsreader_700Bold', marginBottom: 16 },
   sectionTitle: { fontSize: 18, fontFamily: 'Newsreader_700Bold', marginBottom: 14 },
   streakRow: { flexDirection: 'row', alignItems: 'center' },
   streakItem: { flex: 1, alignItems: 'center', gap: 4 },
-  streakNum: { fontSize: 32, fontFamily: 'Newsreader_700Bold' },
-  streakLabel: { fontSize: 12, fontFamily: 'Inter_400Regular' },
-  divider: { width: 1, height: 40 },
+  streakNum: { fontSize: 30, fontFamily: 'Newsreader_700Bold', lineHeight: 34 },
+  streakLabelMono: { fontSize: 9.5, fontFamily: 'Inter_700Bold', letterSpacing: 0.8 },
+  divider: { width: 1, height: 36 },
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 20,
     gap: 16,
     justifyContent: 'space-between',
+  },
+  footerNote: {
+    paddingHorizontal: 30,
+    paddingTop: 10,
+    paddingBottom: 20,
+  },
+  footerNoteText: {
+    fontSize: 10.5,
+    fontFamily: 'Inter_600SemiBold',
+    textAlign: 'center',
+    letterSpacing: 1.2,
+    lineHeight: 16,
+    opacity: 0.7,
   },
 });

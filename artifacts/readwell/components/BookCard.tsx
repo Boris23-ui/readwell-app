@@ -10,56 +10,101 @@ interface Props {
 
 export function BookCard({ book, onPress }: Props) {
   const colors = useColors();
+  const totalSegments = book.segments.length || (book.pages ? book.pages.length : 1);
+  const currentStage = book.currentSegmentIndex;
   const progress =
-    book.segments.length > 0
-      ? Math.round((book.currentSegmentIndex / book.segments.length) * 100)
+    totalSegments > 0
+      ? Math.min(100, Math.round((currentStage / totalSegments) * 100))
       : 0;
+
+  // Determine accent color theme for the stage
+  const accentColor = book.coverColor || colors.primary;
 
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-      activeOpacity={0.75}
+      style={[
+        styles.feltCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: `${accentColor}55`,
+          shadowColor: colors.shadow,
+        },
+      ]}
+      activeOpacity={0.85}
     >
-      <View style={[styles.cover, { backgroundColor: book.coverColor }]}>
-        <Text style={styles.coverInitial}>{book.title[0]?.toUpperCase() ?? 'B'}</Text>
-      </View>
-      <View style={styles.info}>
-        <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={2}>
-          {book.title}
-        </Text>
-        <Text style={[styles.author, { color: colors.mutedForeground }]} numberOfLines={1}>
-          {book.author || 'Unknown Author'}
-        </Text>
-        <View style={styles.progressRow}>
-          <View style={[styles.track, { backgroundColor: colors.muted }]}>
-            <View
-              style={[
-                styles.fill,
-                { backgroundColor: book.coverColor, width: `${progress}%` as any },
-              ]}
-            />
-          </View>
-          <Text style={[styles.pct, { color: colors.mutedForeground }]}>{progress}%</Text>
+      {/* Top Header Row: Stage Pill + Mode Badge */}
+      <View style={styles.topRow}>
+        <View style={[styles.stageBadge, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}44` }]}>
+          <Text style={[styles.stageBadgeText, { color: accentColor }]}>
+            STAGE {currentStage}
+          </Text>
         </View>
+
         <View style={styles.tagRow}>
-          {book.sourceType === 'pdf' && book.pages && (
-            <View style={[styles.badge, { backgroundColor: `${book.coverColor}18` }]}>
-              <Text style={[styles.badgeText, { color: book.coverColor }]}>
-                PDF · {book.pages.length} {book.pages.length === 1 ? 'page' : 'pages'}
+          {book.sourceType === 'pdf' ? (
+            <View style={[styles.modePill, { backgroundColor: colors.muted }]}>
+              <Text style={[styles.modePillText, { color: colors.mutedForeground }]}>
+                PDF · {book.pages?.length || 0} PGS
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.modePill, { backgroundColor: colors.muted }]}>
+              <Text style={[styles.modePillText, { color: colors.mutedForeground }]}>
+                SEQUENTIAL
               </Text>
             </View>
           )}
-          {book.ocrUsed && (
-            <View style={[styles.badge, { backgroundColor: '#F59E0B18' }]}>
-              <Text style={[styles.badgeText, { color: '#B45309' }]}>Scanned PDF</Text>
-            </View>
-          )}
+
           {book.status === 'finished' && (
-            <View style={[styles.badge, { backgroundColor: '#22C55E20' }]}>
-              <Text style={[styles.badgeText, { color: '#22C55E' }]}>Finished</Text>
+            <View style={[styles.modePill, { backgroundColor: `${colors.sageDeep}22` }]}>
+              <Text style={[styles.modePillText, { color: colors.sageDeep }]}>COMPLETE 🏁</Text>
             </View>
           )}
+        </View>
+      </View>
+
+      {/* Main Body: Cover Initial + Title & Author */}
+      <View style={styles.bodyRow}>
+        <View style={[styles.feltCover, { backgroundColor: accentColor }]}>
+          <Text style={styles.coverLetter}>{book.title[0]?.toUpperCase() ?? 'R'}</Text>
+        </View>
+
+        <View style={styles.textCol}>
+          <Text style={[styles.displayTitle, { color: colors.foreground }]} numberOfLines={2}>
+            {book.title}
+          </Text>
+          <Text style={[styles.authorSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {book.author || 'Anonymous Author'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Bottom Progress Bar & Tactile ENTER Action */}
+      <View style={styles.footerRow}>
+        <View style={styles.progressCol}>
+          <View style={[styles.progressBarTrack, { backgroundColor: colors.muted }]}>
+            <View
+              style={[
+                styles.progressBarFill,
+                { backgroundColor: accentColor, width: `${progress}%` as any },
+              ]}
+            />
+          </View>
+          <View style={styles.progressLabelRow}>
+            <Text style={[styles.progressMono, { color: colors.mutedForeground }]}>
+              {currentStage} OF {totalSegments} PARTS
+            </Text>
+            <Text style={[styles.progressMono, { color: colors.foreground }]}>
+              {progress}%
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.btnFelt, { backgroundColor: colors.honey, shadowColor: colors.shadow }]}>
+          <Text style={styles.btnFeltText}>
+            {book.status === 'finished' ? 'REVIEW ▸' : 'ENTER ▸'}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -67,78 +112,128 @@ export function BookCard({ book, onPress }: Props) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 14,
-    marginBottom: 12,
+  feltCard: {
+    borderRadius: 22,
+    borderWidth: 2,
+    padding: 16,
+    marginBottom: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 3,
     gap: 12,
   },
-  cover: {
-    width: 56,
-    height: 74,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  coverInitial: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    fontFamily: 'Newsreader_700Bold',
-  },
-  info: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 4,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '600',
-    fontFamily: 'Inter_600SemiBold',
-    lineHeight: 20,
-  },
-  author: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-  },
-  progressRow: {
+  topRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
   },
-  track: {
-    flex: 1,
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
+  stageBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
   },
-  fill: {
-    height: 4,
-    borderRadius: 2,
-  },
-  pct: {
+  stageBadgeText: {
     fontSize: 11,
-    fontFamily: 'Inter_500Medium',
-    width: 30,
-    textAlign: 'right',
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.1,
   },
   tagRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
-    marginTop: 2,
   },
-  badge: {
-    alignSelf: 'flex-start',
+  modePill: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
-  badgeText: {
-    fontSize: 11,
+  modePillText: {
+    fontSize: 10,
     fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.8,
+  },
+  bodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  feltCover: {
+    width: 50,
+    height: 66,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  coverLetter: {
+    color: '#FFFDF8',
+    fontSize: 24,
+    fontFamily: 'Newsreader_700Bold',
+  },
+  textCol: {
+    flex: 1,
+    gap: 3,
+  },
+  displayTitle: {
+    fontSize: 17,
+    fontFamily: 'Newsreader_700Bold',
+    lineHeight: 22,
+  },
+  authorSubtitle: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginTop: 2,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(150, 130, 110, 0.1)',
+  },
+  progressCol: {
+    flex: 1,
+    gap: 6,
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressMono: {
+    fontSize: 10.5,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.6,
+  },
+  btnFelt: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 14,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  btnFeltText: {
+    color: '#1F1C18',
+    fontSize: 12,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.1,
   },
 });

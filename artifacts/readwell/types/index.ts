@@ -1,12 +1,15 @@
 import { z } from 'zod';
 
 export interface UserProfile {
+  uid?: string;
   name: string;
+  displayName?: string;
   ageGroup: 'teen' | 'adult';
   readingLevel: 'beginner' | 'intermediate' | 'advanced';
   interests: string[];
   dailyGoalMinutes: number;
   xp: number;
+  totalXp?: number;
   xpDomains: Record<string, number>;
   level: number;
   elo: number;
@@ -22,15 +25,19 @@ export interface UserProfile {
   role?: 'learner' | 'sponsor';
   sponsorId?: string | null;
   allocatedTokens?: number;
+  email?: string;
 }
 
 export const UserProfileSchema = z.object({
+  uid: z.string().optional(),
   name: z.string(),
+  displayName: z.string().optional(),
   ageGroup: z.enum(['teen', 'adult']),
   readingLevel: z.enum(['beginner', 'intermediate', 'advanced']),
   interests: z.array(z.string()),
   dailyGoalMinutes: z.number(),
   xp: z.number(),
+  totalXp: z.number().optional(),
   xpDomains: z.record(z.number()).default({ general: 0, fiction: 0, technical: 0, science: 0 }),
   level: z.number(),
   elo: z.number().default(100).catch(100),
@@ -99,6 +106,7 @@ export interface Book {
   wordCount: number;
   currentSegmentIndex: number;
   coverColor: string;
+  complexityIndex?: number;
   // Distinguishes the page-image PDF reader from the reflowed text reader.
   sourceType?: BookSourceType;
   // Present only for sourceType === 'pdf'.
@@ -120,7 +128,7 @@ export interface Segment {
 
 export interface Quiz {
   questions: Question[];
-  complexityIndex: number;
+  complexityIndex?: number;
 }
 
 export interface Question {
@@ -143,6 +151,7 @@ export const BookSchema = z.object({
   wordCount: z.number(),
   currentSegmentIndex: z.number(),
   coverColor: z.string(),
+  complexityIndex: z.number().optional(),
   sourceType: z.enum(['text', 'pdf']).optional(),
   pages: z.array(z.any()).optional(),
   ocrUsed: z.boolean().nullable().optional(),
@@ -176,3 +185,104 @@ export interface Message {
   expiresAt: string; // ISO date string (24 hours after createdAt)
   read: boolean;
 }
+
+// ── ReadWell Coach Agent Types ───────────────────────────────────────────────
+
+export interface EvolutionRecord {
+  version: number;
+  timestamp: string;
+  observation: string;
+  adjustmentMade: string;
+  expectedImpact: string;
+  actualImpact?: string;
+}
+
+export interface StrategyDoc {
+  version: number;
+  lastUpdated: string;
+  tone: string;
+  difficultyLevel: number;
+  preferredQuestionStyle: string;
+  effectiveTactics: string[];
+  ineffectiveTactics: string[];
+  sessionPace: string;
+  evolutionHistory: EvolutionRecord[];
+}
+
+export interface Flashcard {
+  id: string;
+  front: string;
+  back: string;
+  bookTitle: string;
+  chapter: number;
+  cardType: 'vocabulary' | 'concept' | 'theme' | 'quote';
+  createdAt: string;
+  nextReview: string;
+  intervalDays: number;
+  easeFactor: number;
+  repetitions: number;
+}
+
+export interface EngagementSignal {
+  timestamp: string;
+  signalType: 'response_length' | 'confusion' | 'enthusiasm' | 'disengagement' | 'breakthrough';
+  value: string;
+  context?: string;
+}
+
+export interface CoachMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  strategyVersion?: number;
+  agentName?: string;
+  intent?: string;
+  bookContext?: {
+    bookId?: string;
+    title?: string;
+    author?: string;
+    chapter?: number;
+    segmentText?: string;
+  };
+}
+
+export interface CoachDigest {
+  digest: string;
+  strategyVersion: number;
+  streak: {
+    currentStreak: number;
+    longestStreak: number;
+    lastReadDate: string;
+    totalSessions: number;
+    totalMinutes: number;
+  };
+  daysAway?: number;
+}
+
+export interface ReadingPlanItem {
+  day: number;
+  date: string;
+  chapters: string;
+  milestone: boolean;
+}
+
+export interface ReadingPlan {
+  bookTitle: string;
+  totalChapters: number;
+  targetDays: number;
+  chaptersPerDay: number;
+  estimatedMinutesPerSession: number;
+  feasible: boolean;
+  schedule: ReadingPlanItem[];
+}
+
+export interface LeaderboardUser {
+  id: string;
+  name?: string;
+  displayName?: string;
+  xp: number;
+  level: number;
+  streakCurrent: number;
+}
+
