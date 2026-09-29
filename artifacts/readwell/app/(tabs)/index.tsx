@@ -33,9 +33,9 @@ export default function HomeScreen() {
     const loadRecs = async () => {
       try {
         const res = await fetchRecommendations({
-          elo: profile.xp,
+          elo: profile.elo ?? 100,
           readingLevel: profile.readingLevel,
-          interests: profile.interests,
+          interests: profile.interests || [],
         });
         if (mounted && res.recommendations) {
           setRecommendations(res.recommendations);

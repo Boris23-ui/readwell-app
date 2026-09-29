@@ -309,26 +309,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const consumeToken = useCallback((): boolean => {
-    let success = false;
-    setProfile(prev => {
-      if (prev.tokens > 0) {
-        success = true;
-        const updated = { ...prev, tokens: prev.tokens - 1 };
-        AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
-        return updated;
-      }
-      return prev;
-    });
-    return success;
-  }, []);
+    if (profile.tokens <= 0) return false;
+    const updated = { ...profile, tokens: profile.tokens - 1 };
+    setProfile(updated);
+    AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
+    return true;
+  }, [profile]);
 
   const addTokens = useCallback((amount: number) => {
-    setProfile(prev => {
-      const updated = { ...prev, tokens: prev.tokens + amount };
-      AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
-      return updated;
-    });
-  }, []);
+    if (amount <= 0) return;
+    const updated = { ...profile, tokens: profile.tokens + amount };
+    setProfile(updated);
+    AsyncStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(updated)).catch(console.error);
+  }, [profile]);
 
   const addBook = useCallback(async (book: Book) => {
     setBooks(prev => {

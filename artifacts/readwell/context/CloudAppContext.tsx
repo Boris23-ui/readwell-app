@@ -170,28 +170,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const consumeToken = useCallback((): boolean => {
-    let success = false;
+    if (profile.tokens <= 0) return false;
     const currentUserId = user?.uid || 'guest_user';
-    setProfile(prev => {
-      if (prev.tokens > 0) {
-        success = true;
-        const updated = { ...prev, tokens: prev.tokens - 1 };
-        saveProfileToDb(currentUserId, updated).catch(console.error);
-        return updated;
-      }
-      return prev;
-    });
-    return success;
-  }, [user]);
+    const updated = { ...profile, tokens: profile.tokens - 1 };
+    setProfile(updated);
+    saveProfileToDb(currentUserId, updated).catch(console.error);
+    return true;
+  }, [profile, user]);
 
   const addTokens = useCallback((amount: number) => {
+    if (amount <= 0) return;
     const currentUserId = user?.uid || 'guest_user';
-    setProfile(prev => {
-      const updated = { ...prev, tokens: prev.tokens + amount };
-      saveProfileToDb(currentUserId, updated).catch(console.error);
-      return updated;
-    });
-  }, [user]);
+    const updated = { ...profile, tokens: profile.tokens + amount };
+    setProfile(updated);
+    saveProfileToDb(currentUserId, updated).catch(console.error);
+  }, [profile, user]);
 
   const addBook = useCallback(async (book: Book) => {
     const currentUserId = user?.uid || 'guest_user';

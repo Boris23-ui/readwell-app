@@ -36,8 +36,29 @@ router.post("/extract-text", upload.single("file"), async (req, res) => {
       const pdfParse = (await import("pdf-parse")).default;
       const data = await pdfParse(buffer);
       text = data.text;
+    } else if (mimetype === "text/html" || /\.(html|htm)$/i.test(originalname)) {
+      const rawHtml = buffer.toString("utf-8");
+      // Strip script and style blocks
+      const withoutScripts = rawHtml
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+        .replace(/<!--[\s\S]*?-->/g, "");
+      // Convert block elements to newlines
+      const withBlockSpacing = withoutScripts
+        .replace(/<\/(p|div|h[1-6]|li|article|section|blockquote)>/gi, "\n\n")
+        .replace(/<br\s*\/?>/gi, "\n");
+      // Strip all remaining tags
+      const stripped = withBlockSpacing.replace(/<[^>]+>/g, "");
+      // Decode basic HTML entities
+      text = stripped
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
     } else {
-      // Plain text / markdown / HTML — just decode
+      // Plain text / markdown — decode directly
       text = buffer.toString("utf-8");
     }
 

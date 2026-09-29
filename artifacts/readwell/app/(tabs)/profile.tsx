@@ -17,6 +17,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getXpProgressInLevel } from '@/utils/xp';
 
 const GOAL_OPTIONS = [10, 15, 20, 30, 45, 60];
+const LEVEL_OPTIONS: Array<'beginner' | 'intermediate' | 'advanced'> = ['beginner', 'intermediate', 'advanced'];
 
 export default function ProfileScreen() {
   const colors = useColors();
@@ -24,6 +25,7 @@ export default function ProfileScreen() {
   const { profile, updateProfile, addTokens } = useApp();
   const { user, isGuest, signOut } = useAuth();
   const [showGoalPicker, setShowGoalPicker] = useState(false);
+  const [showLevelPicker, setShowLevelPicker] = useState(false);
 
   const xpProgress = getXpProgressInLevel(profile.xp);
   const initials = profile.name
@@ -175,17 +177,50 @@ export default function ProfileScreen() {
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
 
         {/* Reading level */}
-        <View style={styles.settingRow}>
+        <TouchableOpacity
+          style={styles.settingRow}
+          onPress={() => setShowLevelPicker(!showLevelPicker)}
+          activeOpacity={0.7}
+        >
           <View style={[styles.settingIcon, { backgroundColor: `${colors.sageDeep}15` }]}>
             <Feather name="book-open" size={18} color={colors.sageDeep} />
           </View>
           <View style={styles.settingLabel}>
             <Text style={[styles.settingTitle, { color: colors.foreground }]}>Reading Level</Text>
             <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>
-              {profile.readingLevel.charAt(0).toUpperCase() + profile.readingLevel.slice(1)}
+              {profile.readingLevel ? (profile.readingLevel.charAt(0).toUpperCase() + profile.readingLevel.slice(1)) : 'Intermediate'}
             </Text>
           </View>
-        </View>
+          <Feather name={showLevelPicker ? 'chevron-up' : 'chevron-right'} size={16} color={colors.mutedForeground} />
+        </TouchableOpacity>
+
+        {showLevelPicker && (
+          <View style={styles.goalPicker}>
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            <View style={styles.goalOptions}>
+              {LEVEL_OPTIONS.map(lvl => (
+                <TouchableOpacity
+                  key={lvl}
+                  onPress={() => {
+                    updateProfile({ readingLevel: lvl });
+                    setShowLevelPicker(false);
+                  }}
+                  style={[
+                    styles.goalOption,
+                    {
+                      backgroundColor: profile.readingLevel === lvl ? `${colors.sage}30` : colors.muted,
+                      borderColor: profile.readingLevel === lvl ? colors.sageDeep : 'transparent',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.goalOptionText, { color: profile.readingLevel === lvl ? colors.sageDeep : colors.foreground, textTransform: 'capitalize' }]}>
+                    {lvl}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
 

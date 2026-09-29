@@ -501,6 +501,7 @@ User: ${message}
 Coach:`;
 
   try {
+    const agentModel = process.env.GEMINI_AGENT_MODEL || 'gemini-3-flash-preview';
     const result = await aiGateway.generate({
       purpose: 'coach',
       priority: 'standard',
@@ -508,7 +509,8 @@ Coach:`;
       prompt,
       systemInstruction,
       maxOutputTokens: 180, // Was 300; instruction says "under 100 words" ≈ 130 tokens
-      temperature: 0.7,
+      temperature: 1.0, // Recommended temperature for Gemini 3 series preview reasoning
+      model: agentModel,
       fallbackFn: () => {
         if (bookContext?.segmentText) {
           return `In this section of *${bookTitle}*, what particular idea or phrase stood out most to you? Why do you think the author chose to present it this way?`;

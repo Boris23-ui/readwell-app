@@ -68,6 +68,8 @@ export interface AIRequest {
   responseMimeType?: string;
   maxOutputTokens: number;
   temperature?: number;
+  /** Explicit model override. If omitted, uses agent preview model for coach, or standard model for others. */
+  model?: string;
   /** Synchronous fallback function if AI is unavailable or budget-blocked. */
   fallbackFn?: () => string;
 }
@@ -93,11 +95,13 @@ const GEMINI_TIMEOUT_MS = 30_000;
 class AIGateway {
   private client: GoogleGenAI | null = null;
   private modelName: string;
+  private agentModelName: string;
   private cache = new LRUCache(200);
   private initialized = false;
 
   constructor() {
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+    this.agentModelName = process.env.GEMINI_AGENT_MODEL || 'gemini-3-flash-preview';
     this.init();
   }
 
@@ -116,7 +120,10 @@ class AIGateway {
         },
       });
       this.initialized = true;
-      logger.info({ model: this.modelName }, 'AIGateway: Initialized with shared Gemini client');
+      logger.info(
+        { generalModel: this.modelName, agentModel: this.agentModelName },
+        'AIGateway: Initialized with shared Gemini client',
+      );
     } catch (err) {
       logger.warn({ err }, 'AIGateway: Failed to initialize Gemini client');
     }
@@ -192,8 +199,11 @@ class AIGateway {
         config.temperature = req.temperature;
       }
 
+      const targetModel =
+        req.model || (req.purpose === 'coach' ? this.agentModelName : this.modelName);
+
       const response = await this.client.models.generateContent({
-        model: this.modelName,
+        model: targetModel,
         contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
         config,
       });

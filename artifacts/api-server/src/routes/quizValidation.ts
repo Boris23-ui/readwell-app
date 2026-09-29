@@ -39,12 +39,22 @@ function isNonEmptyString(value: unknown): value is string {
 
 function stripMarkdownFence(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed.startsWith("```")) return trimmed;
-
-  return trimmed
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
+  const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (jsonMatch && jsonMatch[1]) {
+    return jsonMatch[1].trim();
+  }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = trimmed.slice(firstBrace, lastBrace + 1);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // not valid JSON on its own, fall through
+    }
+  }
+  return trimmed;
 }
 
 export function parseQuizResponse(raw: string): GenerateQuizResponse {

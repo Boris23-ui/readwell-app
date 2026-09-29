@@ -53,6 +53,12 @@ describe("parseQuizResponse", () => {
     expect(parseQuizResponse(`\`\`\`json\n${JSON.stringify(validQuiz)}\n\`\`\``)).toEqual(validQuiz);
   });
 
+  it("accepts JSON surrounded by conversational text and markdown fence", () => {
+    expect(
+      parseQuizResponse(`Here is the generated quiz:\n\`\`\`json\n${JSON.stringify(validQuiz)}\n\`\`\`\nHope you enjoy!`),
+    ).toEqual(validQuiz);
+  });
+
   it("rejects malformed JSON", () => {
     expect(() => parseQuizResponse("{not-json")).toThrow(QuizFormatError);
   });

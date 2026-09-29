@@ -20,7 +20,8 @@
       "@google/genai",
       "esbuild",
       "protobufjs",
-      "@replit/connectors-sdk"
+      "@replit/connectors-sdk",
+      "gl"
     ]
   }
 }

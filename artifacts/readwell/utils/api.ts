@@ -110,8 +110,19 @@ function requestMultipartJson<T>(
 }
 
 function getBaseUrl(): string {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
+  }
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
-  if (domain) return `https://${domain}`;
+  if (domain) {
+    if (domain.startsWith('http://') || domain.startsWith('https://')) {
+      return domain.replace(/\/+$/, '');
+    }
+    if (domain.includes('localhost') || domain.includes('127.0.0.1') || domain.includes('10.0.2.2')) {
+      return `http://${domain}`;
+    }
+    return `https://${domain}`;
+  }
   if (typeof window !== 'undefined' && window.location?.origin) {
     if (
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
@@ -121,10 +132,7 @@ function getBaseUrl(): string {
     }
     return window.location.origin;
   }
-  throw new Error(
-    'EXPO_PUBLIC_DOMAIN is not set. The app cannot reach the ReadWell server. ' +
-      'Make sure the dev script includes EXPO_PUBLIC_DOMAIN=$REPLIT_EXPO_DEV_DOMAIN.',
-  );
+  return 'http://localhost:3000';
 }
 
 export async function extractTextFromFile(
