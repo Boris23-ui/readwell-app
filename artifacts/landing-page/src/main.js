@@ -575,3 +575,73 @@ if (showcaseInteractive && showcasePhones.length > 0) {
     });
   });
 }
+
+// ─── 7. Draggable Illustration Cards ───
+const illustrationWrapper = document.querySelector('.illustration-wrapper');
+const overlayCards = document.querySelectorAll('.overlay-card');
+
+if (illustrationWrapper && overlayCards.length > 0) {
+  let activeCard = null;
+  let startX = 0;
+  let startY = 0;
+
+  const dragStart = (e, card) => {
+    e.preventDefault();
+    activeCard = card;
+    activeCard.classList.add('is-dragging');
+
+    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+
+    const rect = activeCard.getBoundingClientRect();
+    
+    // Offset inside the card
+    startX = clientX - rect.left;
+    startY = clientY - rect.top;
+
+    // Bring to front
+    overlayCards.forEach(c => c.style.zIndex = '10');
+    activeCard.style.zIndex = '30';
+  };
+
+  const dragMove = (e) => {
+    if (!activeCard) return;
+
+    const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+    const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+
+    const wrapperRect = illustrationWrapper.getBoundingClientRect();
+
+    let x = clientX - wrapperRect.left - startX;
+    let y = clientY - wrapperRect.top - startY;
+
+    // Keep within bounds of wrapper
+    const maxX = wrapperRect.width - activeCard.offsetWidth;
+    const maxY = wrapperRect.height - activeCard.offsetHeight;
+
+    x = Math.max(0, Math.min(x, maxX));
+    y = Math.max(0, Math.min(y, maxY));
+
+    const xPct = (x / wrapperRect.width) * 100;
+    const yPct = (y / wrapperRect.height) * 100;
+
+    activeCard.style.left = `${xPct}%`;
+    activeCard.style.top = `${yPct}%`;
+  };
+
+  const dragEnd = () => {
+    if (!activeCard) return;
+    activeCard.classList.remove('is-dragging');
+    activeCard = null;
+  };
+
+  overlayCards.forEach(card => {
+    card.addEventListener('mousedown', (e) => dragStart(e, card));
+    card.addEventListener('touchstart', (e) => dragStart(e, card), { passive: false });
+  });
+
+  document.addEventListener('mousemove', dragMove);
+  document.addEventListener('mouseup', dragEnd);
+  document.addEventListener('touchmove', dragMove, { passive: false });
+  document.addEventListener('touchend', dragEnd);
+}
