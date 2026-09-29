@@ -527,3 +527,51 @@ spotlightCards.forEach((card) => {
   });
 });
 
+// ─── 6. 3-Phone Showcase Interactivity ───
+const showcaseInteractive = document.querySelector('.showcase-interactive');
+const showcasePhones = document.querySelectorAll('.showcase-phone');
+
+if (showcaseInteractive && showcasePhones.length > 0) {
+  showcaseInteractive.addEventListener('mousemove', (e) => {
+    const rect = showcaseInteractive.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const normX = (x / rect.width - 0.5) * 2;
+    const normY = (y / rect.height - 0.5) * 2;
+
+    showcasePhones.forEach((phone, index) => {
+      let baseRotateZ = 0;
+      let baseTranslateX = 0;
+      let baseScale = 1;
+
+      if (phone.classList.contains('phone-left')) {
+        baseTranslateX = -240;
+        baseRotateZ = -14;
+        baseScale = 0.9;
+      } else if (phone.classList.contains('phone-center')) {
+        baseTranslateX = 0;
+        baseRotateZ = 0;
+        baseScale = 1.05;
+      } else if (phone.classList.contains('phone-right')) {
+        baseTranslateX = 240;
+        baseRotateZ = 14;
+        baseScale = 0.9;
+      }
+
+      const factor = (index + 1) * 3;
+      const rotX = -normY * factor;
+      const rotY = normX * factor;
+      const tX = baseTranslateX + normX * (factor * 3);
+      const tY = normY * (factor * 3);
+
+      phone.style.transform = `translateX(${tX}px) translateY(${tY}px) scale(${baseScale}) rotateZ(${baseRotateZ}deg) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+    });
+  });
+
+  showcaseInteractive.addEventListener('mouseleave', () => {
+    showcasePhones.forEach((phone) => {
+      phone.style.transform = '';
+    });
+  });
+}
