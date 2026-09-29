@@ -385,6 +385,13 @@ if (uploadCard && uploadProgress && progressFill && uploadStatus) {
       }
     }, 100);
   });
+
+  uploadCard.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      uploadCard.click();
+    }
+  });
 }
 
 // Step 2: Quiz interactive demo
@@ -414,6 +421,13 @@ quizOpts.forEach((btn) => {
         quizFeedback.style.borderColor = '#f87171';
         quizFeedback.style.background = '#fef2f2';
       }
+    }
+  });
+
+  btn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      btn.click();
     }
   });
 });
@@ -459,6 +473,13 @@ if (streakBtn && streakFlame && streakCount) {
       }
       streakBtn.innerHTML = '<span>Complete today\'s read</span><span class="streak-xp-pill">+25 XP</span>';
       streakBtn.style.background = '';
+    }
+  });
+
+  streakBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      streakBtn.click();
     }
   });
 }
