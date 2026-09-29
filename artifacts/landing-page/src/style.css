@@ -2727,3 +2727,224 @@ a {
   font-weight: 600;
 }
 
+/* ---------- Illustration Overlay Cards ---------- */
+.illustration-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+
+.illustration-img {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-xl);
+}
+
+.overlay-card {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 2.5cqw;
+  box-shadow: 0 1.5cqw 4cqw rgba(139, 92, 246, 0.12);
+  padding: 1.8cqw;
+  font-family: var(--font-sans);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s ease;
+  animation: float-card 4s ease-in-out infinite alternate;
+}
+
+@keyframes float-card {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-0.8cqw); }
+}
+
+.overlay-card:hover {
+  transform: translateY(-1.5cqw) scale(1.03);
+  box-shadow: 0 2cqw 6cqw rgba(139, 92, 246, 0.25);
+  animation-play-state: paused;
+  z-index: 20;
+}
+
+/* Card 1: Comprehension */
+.card-comp {
+  top: 7%;
+  left: 28%;
+  width: 22%;
+  height: 20%;
+  animation-delay: 0s;
+}
+
+/* Card 2: Streak */
+.card-streak {
+  top: 17%;
+  left: 58%;
+  width: 20%;
+  height: 20%;
+  animation-delay: 1s;
+}
+
+/* Card 3: XP Points */
+.card-xp {
+  top: 33%;
+  left: 14%;
+  width: 21%;
+  height: 19%;
+  animation-delay: 2s;
+}
+
+/* Card 4: Progress */
+.card-prog {
+  top: 58%;
+  left: 45%;
+  width: 27%;
+  height: 15%;
+  animation-delay: 3s;
+}
+
+/* Inner content for overlay cards */
+.oc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8cqw;
+}
+
+.oc-title {
+  font-size: 1.1cqw;
+  font-weight: 700;
+  color: #1a1a2e;
+  letter-spacing: 0.05em;
+}
+
+.oc-value {
+  font-size: 2.4cqw;
+  font-weight: 800;
+  color: #1a1a2e;
+  margin-bottom: 1cqw;
+  display: flex;
+  align-items: center;
+  gap: 0.6cqw;
+}
+
+.oc-bar-track {
+  height: 0.9cqw;
+  background: #ede9fe;
+  border-radius: 1cqw;
+  position: relative;
+  margin-bottom: 1cqw;
+}
+
+.oc-bar-fill {
+  height: 100%;
+  background: #a78bfa;
+  border-radius: 1cqw;
+  position: relative;
+}
+
+.oc-footer {
+  font-size: 1.1cqw;
+  font-weight: 700;
+  color: #1a1a2e;
+  display: flex;
+  align-items: center;
+  gap: 0.5cqw;
+}
+
+.oc-footer-text {
+  font-weight: 500;
+  color: #6b6b80;
+  margin-left: 0.2cqw;
+}
+
+.oc-slider-thumb {
+  position: absolute;
+  right: -0.6cqw;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.8cqw;
+  height: 1.8cqw;
+  background: white;
+  border: 0.4cqw solid #a78bfa;
+  border-radius: 50%;
+  box-shadow: 0 0.2cqw 0.6cqw rgba(0,0,0,0.15);
+}
+
+.oc-icon-box {
+  width: 2.2cqw;
+  height: 2.2cqw;
+  background: #fed7aa;
+  border-radius: 0.5cqw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  padding: 0.4cqw;
+}
+
+.oc-badge {
+  background: #fed7aa;
+  border-radius: 50%;
+  width: 3.8cqw;
+  height: 3.8cqw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0.4cqw 1.2cqw rgba(249, 115, 22, 0.25);
+  border: 0.2cqw solid white;
+}
+
+.oc-badge-lbl {
+  font-size: 0.9cqw;
+  font-weight: 700;
+  color: #ea580c;
+  line-height: 1;
+}
+
+.oc-badge-val {
+  font-size: 1.5cqw;
+  font-weight: 800;
+  color: #ea580c;
+  line-height: 1;
+}
+
+.oc-pct {
+  font-size: 1.4cqw;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+/* Animations */
+.anim-bar-comp {
+  animation: load-comp 3s ease-out forwards;
+}
+@keyframes load-comp { 0% { width: 0%; } 100% { width: 96%; } }
+
+.anim-bar-streak {
+  animation: load-streak 3s ease-out forwards;
+}
+@keyframes load-streak { 0% { width: 0%; } 100% { width: 75%; } }
+
+.anim-bar-prog {
+  animation: load-prog 3s ease-out forwards;
+}
+@keyframes load-prog { 0% { width: 0%; } 100% { width: 78%; } }
+
+.anim-pulse {
+  animation: pulse-emoji 2s infinite alternate ease-in-out;
+  display: inline-block;
+  transform-origin: center;
+}
+@keyframes pulse-emoji {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.15); }
+}
+
+

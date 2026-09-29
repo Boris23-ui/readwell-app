@@ -272,7 +272,71 @@
     <!-- Illustration break -->
     <section class="illustration-break">
       <div class="container">
-        <img src="/reading-illustration.jpg" alt="Person reading with floating UI elements showing comprehension, streaks, and progress" class="illustration-img" loading="lazy" />
+        <div class="illustration-wrapper">
+          <img src="/reading-illustration.jpg" alt="Person reading with floating UI elements showing comprehension, streaks, and progress" class="illustration-img" loading="lazy" />
+          
+          <!-- Dynamic Overlay Cards -->
+          <div class="overlay-card card-comp">
+            <div class="oc-header">
+              <span class="oc-title">COMPREHENSION</span>
+              <div class="oc-icon-box">
+                <svg width="100%" height="100%" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </div>
+            </div>
+            <div class="oc-value">96%</div>
+            <div class="oc-bar-track">
+              <div class="oc-bar-fill anim-bar-comp"></div>
+            </div>
+            <div class="oc-footer">
+              <span class="oc-star">⭐</span> 96/100
+            </div>
+          </div>
+
+          <div class="overlay-card card-streak">
+            <div class="oc-header">
+              <span class="oc-title">STREAK</span>
+            </div>
+            <div class="oc-value">32 DAYS <span class="oc-fires anim-pulse">🔥🔥</span></div>
+            <div class="oc-bar-track">
+              <div class="oc-bar-fill anim-bar-streak" style="background:linear-gradient(90deg, #f97316, #fca5a5);">
+                 <div class="oc-slider-thumb" style="border-color:#f97316;"></div>
+              </div>
+            </div>
+            <div class="oc-footer">
+              <span class="oc-fire-small">🔥</span> 32 <span class="oc-footer-text">10 Days to Next Level</span>
+            </div>
+          </div>
+
+          <div class="overlay-card card-xp">
+            <div class="oc-header" style="align-items:flex-start;">
+              <span class="oc-title">XP POINTS</span>
+              <div class="oc-badge anim-spin-slow">
+                 <span class="oc-badge-lbl">LVL</span>
+                 <span class="oc-badge-val">12</span>
+              </div>
+            </div>
+            <div class="oc-value">2,450 XP</div>
+            <div class="oc-footer">
+              <span class="oc-star">⭐</span> 2,450 XP <span class="oc-footer-text">NEXT LVL: 2,500</span>
+            </div>
+          </div>
+
+          <div class="overlay-card card-prog">
+            <div class="oc-header">
+              <span class="oc-title">PROGRESS</span>
+              <span class="oc-pct">78%</span>
+            </div>
+            <div class="oc-bar-track">
+              <div class="oc-bar-fill anim-bar-prog">
+                 <div class="oc-slider-thumb"></div>
+              </div>
+            </div>
+            <div class="oc-footer">
+              <span class="oc-footer-text">Chapter 7/10: 78% Complete</span>
+            </div>
+          </div>
+
+        </div>
       </div>
     </section>
 
