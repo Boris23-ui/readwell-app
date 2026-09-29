@@ -2774,37 +2774,37 @@ a {
 
 /* Card 1: Comprehension */
 .card-comp {
-  top: 7%;
-  left: 28%;
-  width: 22%;
-  height: 20%;
+  top: 12.5%;
+  left: 30.5%;
+  width: 25%;
+  height: 22.5%;
   animation-delay: 0s;
 }
 
 /* Card 2: Streak */
 .card-streak {
-  top: 17%;
-  left: 58%;
-  width: 20%;
-  height: 20%;
+  top: 21%;
+  left: 59%;
+  width: 25%;
+  height: 22.5%;
   animation-delay: 1s;
 }
 
 /* Card 3: XP Points */
 .card-xp {
-  top: 33%;
-  left: 14%;
-  width: 21%;
-  height: 19%;
+  top: 38%;
+  left: 16.5%;
+  width: 26%;
+  height: 23.5%;
   animation-delay: 2s;
 }
 
 /* Card 4: Progress */
 .card-prog {
-  top: 58%;
-  left: 45%;
-  width: 27%;
-  height: 15%;
+  top: 61.5%;
+  left: 47.5%;
+  width: 32%;
+  height: 18%;
   animation-delay: 3s;
 }
 
@@ -2817,20 +2817,21 @@ a {
 }
 
 .oc-title {
-  font-size: 1.1cqw;
+  font-size: 1.0cqw;
   font-weight: 700;
   color: #1a1a2e;
   letter-spacing: 0.05em;
 }
 
 .oc-value {
-  font-size: 2.4cqw;
+  font-size: 2.1cqw;
   font-weight: 800;
   color: #1a1a2e;
   margin-bottom: 1cqw;
   display: flex;
   align-items: center;
-  gap: 0.6cqw;
+  gap: 0.4cqw;
+  white-space: nowrap;
 }
 
 .oc-bar-track {
@@ -2849,12 +2850,13 @@ a {
 }
 
 .oc-footer {
-  font-size: 1.1cqw;
+  font-size: 0.95cqw;
   font-weight: 700;
   color: #1a1a2e;
   display: flex;
   align-items: center;
-  gap: 0.5cqw;
+  gap: 0.4cqw;
+  white-space: nowrap;
 }
 
 .oc-footer-text {
@@ -2889,6 +2891,9 @@ a {
 }
 
 .oc-badge {
+  position: absolute;
+  top: 1cqw;
+  right: -1.5cqw;
   background: #fed7aa;
   border-radius: 50%;
   width: 3.8cqw;
