@@ -1,0 +1,15 @@
+{
+  "name": "@workspace/landing-page",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "jimp": "^1.6.1",
+    "vite": "^6.3.5"
+  }
+}

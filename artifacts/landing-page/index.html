@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReadWell — Turn any book into a reading habit</title>
+    <meta name="description" content="ReadWell is your AI reading companion. Import any book, read in short sessions, take AI-generated quizzes, and build a consistent reading habit. Like Duolingo, but for reading." />
+    <meta name="keywords" content="reading app, AI reading companion, reading habits, comprehension quizzes, book reading, reading streak" />
+    <meta property="og:title" content="ReadWell — Turn any book into a reading habit" />
+    <meta property="og:description" content="Your AI-powered reading companion. Read more, understand more, remember more." />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Scroll reading progress indicator -->
+    <div class="scroll-progress-bar" id="scroll-progress" aria-hidden="true"></div>
+
+    <!-- Navigation -->
+    <nav class="nav" id="main-nav">
+      <div class="nav-inner container">
+        <a href="#" class="nav-logo" id="nav-logo">
+          <img src="/logo.jpg" alt="ReadWell" class="nav-logo-img" width="32" height="32" />
+          <span>ReadWell</span>
+        </a>
+        <div class="nav-links" id="nav-links">
+          <a href="#features" class="nav-link">Features</a>
+          <a href="#how-it-works" class="nav-link">How it works</a>
+          <a href="#testimonials" class="nav-link">Testimonials</a>
+          <a href="#pricing" class="nav-link">Pricing</a>
+        </div>
+        <div class="nav-actions">
+          <a href="#" class="btn btn-ghost" id="btn-login">Log in</a>
+          <a href="#cta" class="btn btn-primary" id="btn-get-started-nav">Get started free</a>
+        </div>
+        <button class="nav-mobile-toggle" id="nav-mobile-toggle" aria-label="Toggle navigation menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Mobile Navigation Overlay -->
+    <div class="mobile-nav-overlay" id="mobile-nav-overlay">
+      <div class="mobile-nav-content">
+        <a href="#features" class="mobile-nav-link">Features</a>
+        <a href="#how-it-works" class="mobile-nav-link">How it works</a>
+        <a href="#testimonials" class="mobile-nav-link">Testimonials</a>
+        <a href="#pricing" class="mobile-nav-link">Pricing</a>
+        <div class="mobile-nav-divider"></div>
+        <a href="#" class="btn btn-ghost btn-full">Log in</a>
+        <a href="#cta" class="btn btn-primary btn-full">Get started free</a>
+      </div>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="hero" id="hero">
+      <div class="hero-bg-shapes">
+        <div class="hero-shape hero-shape-1"></div>
+        <div class="hero-shape hero-shape-2"></div>
+        <div class="hero-shape hero-shape-3"></div>
+      </div>
+      <div class="container hero-container">
+        <div class="hero-content">
+          <div class="hero-badge animate-in">
+            <span class="hero-badge-dot"></span>
+            <span>Now in public beta</span>
+          </div>
+          <h1 class="hero-title animate-in delay-1">
+            Turn any book into<br />a reading <em>habit</em>
+          </h1>
+          <p class="hero-subtitle animate-in delay-2">
+            ReadWell is your AI reading companion. Import any PDF or text, read in short sessions, answer AI-generated comprehension questions, and build a reading streak that sticks.
+          </p>
+          <div class="hero-cta animate-in delay-3">
+            <a href="#cta" class="btn btn-primary btn-lg btn-shimmer" id="btn-hero-start">
+              Start reading free
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </a>
+            <a href="#how-it-works" class="btn btn-ghost btn-lg" id="btn-hero-learn">
+              See how it works
+            </a>
+          </div>
+          <div class="hero-social-proof animate-in delay-4">
+            <div class="avatar-stack">
+              <div class="avatar" style="background: linear-gradient(135deg, #f97316, #ea580c);">A</div>
+              <div class="avatar" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">D</div>
+              <div class="avatar" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">G</div>
+              <div class="avatar" style="background: linear-gradient(135deg, #10b981, #059669);">S</div>
+            </div>
+            <p class="social-proof-text">
+              Join <strong>2,400+</strong> readers building better habits
+            </p>
+          </div>
+        </div>
+        <div class="hero-visual animate-in delay-2">
+          <div class="hero-phone-wrapper" id="hero-phone-card">
+            <!-- Dynamic floating micro badges -->
+            <div class="hero-floating-badge badge-streak" id="badge-streak">
+              <span class="badge-icon">🔥</span>
+              <div class="badge-info">
+                <span class="badge-title">14-Day Streak</span>
+                <span class="badge-meta">Top 5% reader</span>
+              </div>
+            </div>
+            <div class="hero-floating-badge badge-quiz" id="badge-quiz">
+              <span class="badge-icon">✨</span>
+              <div class="badge-info">
+                <span class="badge-title">Quiz Master</span>
+                <span class="badge-meta">+50 XP earned</span>
+              </div>
+            </div>
+
+            <!-- Living Dynamic Phone Device -->
+            <div class="phone-device" id="phone-device" title="Click to interact with the ReadWell app simulator">
+              <div class="phone-bezel">
+                <!-- Dynamic Island / Speaker -->
+                <div class="phone-island">
+                  <div class="island-camera"></div>
+                </div>
+
+                <!-- Live Screen -->
+                <div class="phone-screen" id="phone-screen">
+                  <!-- Phone Status Bar -->
+                  <div class="phone-status-bar">
+                    <span class="status-time">9:41</span>
+                    <div class="status-icons">
+                      <span class="status-dot"></span>
+                      <svg width="14" height="10" viewBox="0 0 16 12" fill="currentColor"><path d="M0 2C0 .9.9 0 2 0h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2zm2 1v6h12V3H2z"/><rect x="14" y="4" width="2" height="4" rx="1"/></svg>
+                    </div>
+                  </div>
+
+                  <!-- Phone App Header / Reading Progress -->
+                  <div class="screen-header">
+                    <div class="screen-header-top">
+                      <span class="screen-book-title">QUIET IDEAS</span>
+                      <span class="screen-progress-num" id="phone-progress-pct">85%</span>
+                    </div>
+                    <div class="screen-progress-track">
+                      <div class="screen-progress-fill" id="phone-progress-fill" style="width: 85%;"></div>
+                    </div>
+                  </div>
+
+                  <!-- App View 1: Active Reader Passage -->
+                  <div class="screen-view view-reader" id="phone-view-reader">
+                    <div class="reader-chapter-badge">CHAPTER 6: MINDFULNESS</div>
+                    <div class="reader-text-block">
+                      <p class="reader-p p-1">Developing mindfulness is about being present, not escaping thoughts.</p>
+                      <p class="reader-p p-2 active-reading" id="reader-highlight-p">In observing thoughts, awareness transforms into clarity. Each page read with focus deepens retention and understanding.</p>
+                      <p class="reader-p p-3">Throughout daily sessions, comprehension solidifies into lifelong habits.</p>
+                    </div>
+                  </div>
+
+                  <!-- App View 2: Bottom Sheet Quiz (Slides Up) -->
+                  <div class="screen-quiz-sheet" id="phone-quiz-sheet">
+                    <div class="quiz-drag-handle"></div>
+                    <div class="quiz-sheet-header">
+                      <span class="quiz-sheet-title">Comprehension Quiz</span>
+                      <span class="quiz-sheet-step">Question 1 of 5</span>
+                    </div>
+                    <p class="quiz-sheet-q">Q1. What is the core idea of mindfulness?</p>
+                    <div class="quiz-sheet-options">
+                      <div class="quiz-phone-opt" id="phone-opt-1">
+                        <span class="quiz-opt-letter">a.</span>
+                        <span class="quiz-opt-label">Being present</span>
+                        <span class="quiz-opt-check" id="phone-opt-check">✓</span>
+                      </div>
+                      <div class="quiz-phone-opt" id="phone-opt-2">
+                        <span class="quiz-opt-letter">b.</span>
+                        <span class="quiz-opt-label">Avoiding thoughts</span>
+                      </div>
+                    </div>
+                    <div class="quiz-phone-evidence" id="phone-quiz-evidence">
+                      <span>✨ Evidence: Grounded in Chapter 6</span>
+                    </div>
+                  </div>
+
+                  <!-- App View 3: Streak / XP Celebration Modal -->
+                  <div class="screen-streak-overlay" id="phone-streak-overlay">
+                    <div class="streak-overlay-flame" id="streak-modal-flame">🔥</div>
+                    <div class="streak-overlay-title">15 Day Streak!</div>
+                    <p class="streak-overlay-desc">Daily habit milestone reached</p>
+                    <div class="streak-overlay-xp">
+                      <span class="xp-burst-tag">+50 XP Earned</span>
+                    </div>
+                    <button class="streak-overlay-btn" id="phone-btn-continue" type="button">
+                      <span>Continue Reading</span>
+                    </button>
+                  </div>
+
+                  <!-- Simulated User Cursor / Tap Ripple -->
+                  <div class="phone-tap-indicator" id="phone-tap-indicator"></div>
+
+                  <!-- Phone Home Indicator Bar -->
+                  <div class="phone-home-indicator"></div>
+                </div>
+              </div>
+
+              <!-- Specular Glare Overlay -->
+              <div class="hero-phone-glare" id="hero-phone-glare"></div>
+            </div>
+
+            <div class="hero-glow"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">Features</span>
+          <h2 class="section-title">Everything you need to read more<br />and remember it all</h2>
+          <p class="section-subtitle">No more abandoned books. ReadWell breaks reading into a rewarding daily loop with AI-powered comprehension checks.</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card feature-card-highlight" id="feature-import">
+            <div class="feature-icon feature-icon-orange">
+              <img src="/icon-import.jpg" alt="Import anything" class="feature-icon-img" width="60" height="60" loading="lazy" />
+            </div>
+            <h3 class="feature-title">Import anything</h3>
+            <p class="feature-desc">Upload PDFs, paste text, or import articles. ReadWell intelligently chunks content into readable sessions.</p>
+          </div>
+          <div class="feature-card" id="feature-quiz">
+            <div class="feature-icon feature-icon-purple">
+              <img src="/icon-quiz.jpg" alt="AI comprehension quizzes" class="feature-icon-img" width="60" height="60" loading="lazy" />
+            </div>
+            <h3 class="feature-title">AI comprehension quizzes</h3>
+            <p class="feature-desc">After each section, get 5 AI-generated questions — recall, inference, vocabulary, and reflection. With evidence quotes.</p>
+          </div>
+          <div class="feature-card" id="feature-streak">
+            <div class="feature-icon feature-icon-green">
+              <img src="/icon-streak.jpg" alt="Streaks & XP" class="feature-icon-img" width="60" height="60" loading="lazy" />
+            </div>
+            <h3 class="feature-title">Streaks & XP</h3>
+            <p class="feature-desc">Build a daily reading streak, earn XP, unlock badges, and level up. Reading becomes a game you actually want to play.</p>
+          </div>
+          <div class="feature-card" id="feature-reader">
+            <div class="feature-icon feature-icon-blue">
+              <img src="/icon-reader.jpg" alt="Distraction-free reader" class="feature-icon-img" width="60" height="60" loading="lazy" />
+            </div>
+            <h3 class="feature-title">Distraction-free reader</h3>
+            <p class="feature-desc">Clean typography, dark mode, adjustable fonts. A reading experience designed to help you focus.</p>
+          </div>
+          <div class="feature-card" id="feature-progress">
+            <div class="feature-icon feature-icon-pink">
+              <img src="/icon-dashboard.jpg" alt="Reading dashboard" class="feature-icon-img" width="60" height="60" loading="lazy" />
+            </div>
+            <h3 class="feature-title">Reading dashboard</h3>
+            <p class="feature-desc">Track books in progress, comprehension scores, pages read, and weekly charts. See your growth over time.</p>
+          </div>
+          <div class="feature-card" id="feature-ai">
+            <div class="feature-icon feature-icon-amber">
+              <img src="/icon-gemini.jpg" alt="Powered by Gemini AI" class="feature-icon-img" width="60" height="60" loading="lazy" />
+            </div>
+            <h3 class="feature-title">Powered by Gemini AI</h3>
+            <p class="feature-desc">Smart quiz generation uses Google's Gemini to craft context-aware questions grounded in the actual text.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Illustration break -->
+    <section class="illustration-break">
+      <div class="container">
+        <img src="/reading-illustration.jpg" alt="Person reading with floating UI elements showing comprehension, streaks, and progress" class="illustration-img" loading="lazy" />
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="how-it-works" id="how-it-works">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">How it works</span>
+          <h2 class="section-title">Start reading smarter in 3 steps</h2>
+          <p class="section-subtitle">No signup forms. No credit card. Import a book and start in under a minute.</p>
+        </div>
+        <div class="steps">
+          <div class="step" id="step-1">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3 class="step-title">Import your book</h3>
+              <p class="step-desc">Upload a PDF or paste text. ReadWell automatically chunks it into bite-sized reading sessions.</p>
+            </div>
+            <div class="step-visual">
+              <div class="step-card-mock step-card-interactive" id="mock-upload-card" role="button" tabindex="0" title="Click to test document upload">
+                <div class="mock-header">
+                  <span class="mock-dot"></span>
+                  <span class="mock-dot"></span>
+                  <span class="mock-dot"></span>
+                  <span class="mock-card-tag">Interactive Demo</span>
+                </div>
+                <div class="mock-upload" id="mock-upload-zone">
+                  <div class="mock-upload-icon-wrap" id="mock-upload-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  </div>
+                  <div class="mock-upload-status" id="mock-upload-status">
+                    <span class="mock-upload-text">Click to simulate PDF import</span>
+                    <span class="mock-upload-hint">Atomic_Habits_Ch1.pdf</span>
+                  </div>
+                  <div class="mock-upload-progress" id="mock-upload-progress" style="display: none;">
+                    <div class="mock-progress-bar">
+                      <div class="mock-progress-fill" id="mock-progress-fill"></div>
+                    </div>
+                    <span class="mock-progress-text" id="mock-progress-text">Extracting chapters...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step" id="step-2">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3 class="step-title">Read & answer quizzes</h3>
+              <p class="step-desc">Read each section at your own pace. After every segment, answer 5 AI-generated comprehension questions.</p>
+            </div>
+            <div class="step-visual">
+              <div class="step-card-mock step-card-interactive" id="mock-quiz-card">
+                <div class="mock-header">
+                  <span class="mock-dot"></span>
+                  <span class="mock-dot"></span>
+                  <span class="mock-dot"></span>
+                  <span class="mock-card-tag quiz-tag">AI Quiz • Q1 of 5</span>
+                </div>
+                <div class="mock-quiz" id="interactive-quiz">
+                  <div class="mock-question">What accelerates habit formation?</div>
+                  <div class="mock-options-interactive">
+                    <button class="mock-quiz-opt" data-correct="false" type="button">
+                      <span class="opt-bullet">A</span>
+                      <span>Willpower alone</span>
+                    </button>
+                    <button class="mock-quiz-opt mock-quiz-target" data-correct="true" type="button">
+                      <span class="opt-bullet">B</span>
+                      <span>Immediate cues & rewards</span>
+                    </button>
+                    <button class="mock-quiz-opt" data-correct="false" type="button">
+                      <span class="opt-bullet">C</span>
+                      <span>5-hour study blocks</span>
+                    </button>
+                  </div>
+                  <div class="mock-quiz-feedback" id="quiz-feedback">
+                    <span class="feedback-badge" id="feedback-badge">Click an answer above to test</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step" id="step-3">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3 class="step-title">Build your streak</h3>
+              <p class="step-desc">Complete daily sessions to maintain your reading streak. Track your comprehension and see yourself improve.</p>
+            </div>
+            <div class="step-visual">
+              <div class="step-card-mock step-card-interactive" id="mock-streak-card">
+                <div class="mock-header">
+                  <span class="mock-dot"></span>
+                  <span class="mock-dot"></span>
+                  <span class="mock-dot"></span>
+                  <span class="mock-card-tag streak-tag">Daily Habit Loop</span>
+                </div>
+                <div class="mock-streak">
+                  <div class="mock-streak-fire" id="interactive-streak-flame">🔥</div>
+                  <div class="mock-streak-count" id="interactive-streak-count">14 day streak!</div>
+                  <div class="mock-streak-bar">
+                    <div class="mock-streak-bar-fill" id="interactive-streak-fill" style="width: 70%;"></div>
+                  </div>
+                  <div class="mock-streak-label" id="interactive-streak-label">4 more days to next badge</div>
+                  <button class="btn-demo-streak" id="btn-demo-streak" type="button">
+                    <span>Complete today's read</span>
+                    <span class="streak-xp-pill">+25 XP</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Feature showcase with app screens -->
+    <section class="showcase" id="showcase">
+      <div class="container">
+        <img src="/feature-screens.jpg" alt="ReadWell app screens showing quiz, streak, and dashboard features" class="showcase-img" loading="lazy" />
+      </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="testimonials" id="testimonials">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">Testimonials</span>
+          <h2 class="section-title">Loved by readers everywhere</h2>
+        </div>
+        <div class="testimonials-grid">
+          <div class="testimonial-card" id="testimonial-1">
+            <div class="testimonial-stars">★★★★★</div>
+            <p class="testimonial-text">"I went from reading 2 books a year to finishing one every month. The quizzes after each section keep me honest — I actually remember what I read now."</p>
+            <div class="testimonial-author">
+              <div class="testimonial-avatar" style="background: linear-gradient(135deg, #f97316, #ea580c);">A</div>
+              <div>
+                <div class="testimonial-name">Amina K.</div>
+                <div class="testimonial-role">Student, University of Nairobi</div>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card" id="testimonial-2">
+            <div class="testimonial-stars">★★★★★</div>
+            <p class="testimonial-text">"The streak system is addictive in the best way. I've read every single day for 47 days straight. My screen time report finally looks healthy."</p>
+            <div class="testimonial-author">
+              <div class="testimonial-avatar" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">D</div>
+              <div>
+                <div class="testimonial-name">Daniel M.</div>
+                <div class="testimonial-role">Junior Developer</div>
+              </div>
+            </div>
+          </div>
+          <div class="testimonial-card" id="testimonial-3">
+            <div class="testimonial-stars">★★★★★</div>
+            <p class="testimonial-text">"I upload my technical PDFs and the AI generates quizzes that actually test understanding, not just keyword recall. This is how studying should work."</p>
+            <div class="testimonial-author">
+              <div class="testimonial-avatar" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">S</div>
+              <div>
+                <div class="testimonial-name">Sarah O.</div>
+                <div class="testimonial-role">Lifelong Learner</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="pricing" id="pricing">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-eyebrow">Pricing</span>
+          <h2 class="section-title">Simple, transparent pricing</h2>
+          <p class="section-subtitle">Start free. Upgrade when you're ready.</p>
+          <!-- Innovative billing toggle -->
+          <div class="pricing-toggle-wrap">
+            <div class="pricing-toggle" id="pricing-toggle" role="tablist">
+              <button class="pricing-toggle-btn active" id="btn-billing-monthly" type="button" role="tab" aria-selected="true">Monthly</button>
+              <button class="pricing-toggle-btn" id="btn-billing-annual" type="button" role="tab" aria-selected="false">
+                Annual
+                <span class="pricing-save-badge">Save 20%</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="pricing-grid">
+          <div class="pricing-card" id="pricing-free">
+            <div class="pricing-name">Free</div>
+            <div class="pricing-price">$0<span>/month</span></div>
+            <p class="pricing-desc">Perfect for getting started</p>
+            <ul class="pricing-features">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Import up to 3 books
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                AI comprehension quizzes
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Reading streaks & XP
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Basic progress dashboard
+              </li>
+            </ul>
+            <a href="#cta" class="btn btn-ghost btn-full" id="btn-pricing-free">Get started</a>
+          </div>
+          <div class="pricing-card pricing-card-popular" id="pricing-pro">
+            <div class="pricing-popular-badge">Most popular</div>
+            <div class="pricing-name">Pro</div>
+            <div class="pricing-price">
+              <span class="price-currency">$</span><span class="price-val" id="price-pro-val">4.99</span><span class="price-period" id="price-pro-period">/month</span>
+            </div>
+            <p class="pricing-desc" id="pricing-desc-pro">Billed monthly • Cancel anytime</p>
+            <ul class="pricing-features">
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Unlimited books
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Advanced AI quizzes
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Detailed analytics
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Spaced repetition review
+              </li>
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Priority AI processing
+              </li>
+            </ul>
+            <a href="#cta" class="btn btn-primary btn-full btn-shimmer" id="btn-pricing-pro">Start free trial</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="cta" id="cta">
+      <div class="container">
+        <div class="cta-card">
+          <div class="cta-bg-shapes">
+            <div class="cta-shape cta-shape-1"></div>
+            <div class="cta-shape cta-shape-2"></div>
+          </div>
+          <h2 class="cta-title">Ready to read more and remember it all?</h2>
+          <p class="cta-subtitle">Join thousands of readers who've built a consistent reading habit with ReadWell.</p>
+          <div class="cta-form">
+            <input type="email" placeholder="Enter your email" class="cta-input" id="cta-email-input" aria-label="Email address" />
+            <button class="btn btn-primary btn-lg" id="btn-cta-submit">
+              Get early access
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+          <p class="cta-note">Free forever plan available. No credit card required.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer" id="footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <a href="#" class="footer-logo">
+              <img src="/logo.jpg" alt="ReadWell" class="footer-logo-img" width="28" height="28" />
+              <span>ReadWell</span>
+            </a>
+            <p class="footer-tagline">Turn any book into a reading habit.</p>
+          </div>
+          <div class="footer-col">
+            <h4>Product</h4>
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#">Changelog</a>
+          </div>
+          <div class="footer-col">
+            <h4>Resources</h4>
+            <a href="#">Blog</a>
+            <a href="#">Documentation</a>
+            <a href="#">Help center</a>
+            <a href="#">Community</a>
+          </div>
+          <div class="footer-col">
+            <h4>Company</h4>
+            <a href="#">About</a>
+            <a href="#">Privacy</a>
+            <a href="#">Terms</a>
+            <a href="#">Contact</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>&copy; 2026 ReadWell. All rights reserved.</p>
+          <div class="footer-social">
+            <a href="#" aria-label="Twitter">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            </a>
+            <a href="#" aria-label="GitHub">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
