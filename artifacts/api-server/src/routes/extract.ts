@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { logger } from "../lib/logger";
+import { aiGateway } from "../lib/aiGateway";
 
 const router = Router();
 
@@ -9,8 +10,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max
   fileFilter(_req, file, cb) {
-    const allowed = ["application/pdf", "text/plain", "text/markdown", "text/html"];
-    const extOk = /\.(pdf|txt|md|markdown|html|htm)$/i.test(file.originalname);
+    const allowed = ["application/pdf", "text/plain", "text/markdown", "text/html", "image/png", "image/jpeg", "image/jpg", "image/webp"];
+    const extOk = /\.(pdf|txt|md|markdown|html|htm|png|jpg|jpeg|webp)$/i.test(file.originalname);
     if (allowed.includes(file.mimetype) || extOk) {
       cb(null, true);
     } else {
@@ -57,6 +58,21 @@ router.post("/extract-text", upload.single("file"), async (req, res) => {
         .replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'");
+    } else if (mimetype.startsWith("image/") || /\.(png|jpg|jpeg|webp)$/i.test(originalname)) {
+      const base64Data = buffer.toString("base64");
+      const aiResponse = await aiGateway.generate({
+        purpose: 'comprehension', // repurposing for general text extraction
+        priority: 'standard',
+        prompt: 'Extract all the text from this image exactly as it is written. Only return the text, no other comments.',
+        systemInstruction: 'You are an OCR expert. Extract the text perfectly from the image.',
+        maxOutputTokens: 2048,
+        image: {
+          mimeType: mimetype,
+          data: base64Data
+        },
+        fallbackFn: () => { throw new Error('Cannot extract text from image without AI'); }
+      });
+      text = aiResponse.text;
     } else {
       // Plain text / markdown — decode directly
       text = buffer.toString("utf-8");

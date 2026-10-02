@@ -62,6 +62,10 @@ export interface AIRequest {
   cacheKey?: string;
   /** Cache TTL in ms. Defaults vary by purpose. Set to 0 to skip caching. */
   cacheTtlMs?: number;
+  image?: {
+    mimeType: string;
+    data: string;
+  };
   prompt: string;
   systemInstruction: string;
   responseSchema?: object;
@@ -202,9 +206,19 @@ class AIGateway {
       const targetModel =
         req.model || (req.purpose === 'coach' ? this.agentModelName : this.modelName);
 
+      const parts: any[] = [{ text: req.prompt }];
+      if (req.image) {
+        parts.push({
+          inlineData: {
+            mimeType: req.image.mimeType,
+            data: req.image.data,
+          },
+        });
+      }
+
       const response = await this.client.models.generateContent({
         model: targetModel,
-        contents: [{ role: 'user', parts: [{ text: req.prompt }] }],
+        contents: [{ role: 'user', parts }],
         config,
       });
 
