@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import { Book, Segment } from '@/types';
@@ -240,9 +241,9 @@ function WebDropZone({
   );
 }
 
-// ─── Mobile Picker Button ─────────────────────────────────────────────────────
+// ─── Mobile Media Buttons ─────────────────────────────────────────────────────
 
-function MobilePickerButton({
+function MobileMediaButtons({
   onFilePicked,
   isExtracting,
   extractingLabel = 'Extracting text…',
@@ -274,8 +275,33 @@ function MobilePickerButton({
     }
   };
 
+  const handleCamera = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        alert('Camera permission is required to take a picture of a book.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const uri = asset.uri;
+        const name = uri.split('/').pop() || 'photo.jpg';
+        const mimeType = 'image/jpeg';
+        onFilePicked(uri, name, mimeType);
+      }
+    } catch (e) {
+      console.error('ImagePicker error', e);
+    }
+  };
+
   return (
-    <Animated.View entering={ZoomIn.springify()} layout={Layout.springify()}>
+    <Animated.View entering={ZoomIn.springify()} layout={Layout.springify()} style={{ gap: 10 }}>
       <TouchableOpacity
         onPress={handlePick}
       disabled={isExtracting}
@@ -299,7 +325,7 @@ function MobilePickerButton({
       ) : (
         <>
           <View style={[styles.mobilePickerIcon, { backgroundColor: colors.muted }]}>
-            <Feather name="upload" size={22} color={colors.mutedForeground} />
+            <Feather name="file-text" size={22} color={colors.mutedForeground} />
           </View>
           <View style={styles.mobilePickerLabel}>
             <Text style={[styles.mobilePickerText, { color: colors.foreground }]}>
@@ -313,6 +339,44 @@ function MobilePickerButton({
         </>
       )}
     </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={handleCamera}
+        disabled={isExtracting}
+        style={[
+          styles.mobilePickerBtn,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            opacity: isExtracting ? 0.6 : 1,
+          },
+        ]}
+        activeOpacity={0.75}
+      >
+        {isExtracting ? (
+          <>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={[styles.mobilePickerText, { color: colors.foreground }]}>
+              {extractingLabel}
+            </Text>
+          </>
+        ) : (
+          <>
+            <View style={[styles.mobilePickerIcon, { backgroundColor: colors.muted }]}>
+              <Feather name="camera" size={22} color={colors.mutedForeground} />
+            </View>
+            <View style={styles.mobilePickerLabel}>
+              <Text style={[styles.mobilePickerText, { color: colors.foreground }]}>
+                Take a picture
+              </Text>
+              <Text style={[styles.mobilePickerSub, { color: colors.mutedForeground }]}>
+                Scan a book or notebook page
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          </>
+        )}
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -737,7 +801,7 @@ export default function ImportScreen() {
                 colors={colors}
               />
             ) : (
-              <MobilePickerButton
+              <MobileMediaButtons
                 onFilePicked={handleMobileFile}
                 isExtracting={extracting}
                 extractingLabel={statusMsg || 'Extracting text…'}

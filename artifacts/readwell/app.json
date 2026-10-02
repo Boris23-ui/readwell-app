@@ -28,7 +28,13 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow ReadWell to access your camera to scan book pages."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

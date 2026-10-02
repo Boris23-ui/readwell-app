@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, useColorScheme, View } from 'react-native';
+import { Platform, StyleSheet, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -45,6 +45,8 @@ function ClassicTabLayout() {
   const isDark = colorScheme === 'dark';
   const isIOS = Platform.OS === 'ios';
   const isWeb = Platform.OS === 'web';
+  const { width } = useWindowDimensions();
+  const isWide = isWeb && width >= 768;
 
   return (
     <Tabs
@@ -54,11 +56,33 @@ function ClassicTabLayout() {
         headerShown: false,
         tabBarStyle: {
           position: 'absolute',
-          backgroundColor: isIOS ? 'transparent' : colors.background,
-          borderTopWidth: isWeb ? 1 : 0,
+          bottom: isWide ? 14 : 0,
+          left: 0,
+          right: 0,
+          backgroundColor: isIOS ? 'transparent' : colors.card,
+          borderTopWidth: isWide ? 0 : 1,
           borderTopColor: colors.border,
-          elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
+          elevation: 16,
+          zIndex: 9999,
+          height: isWeb ? 68 : isIOS ? 84 : 64,
+          paddingBottom: isWeb ? 10 : isIOS ? 28 : 10,
+          paddingTop: 8,
+          ...(isWide
+            ? {
+                maxWidth: 620,
+                width: '92%',
+                marginHorizontal: 'auto',
+                alignSelf: 'center',
+                borderRadius: 24,
+                borderWidth: 1,
+                borderColor: `${colors.border}cc`,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.35,
+                shadowRadius: 18,
+                overflow: 'hidden',
+              }
+            : {}),
         },
         tabBarBackground: () =>
           isIOS ? (
@@ -68,7 +92,15 @@ function ClassicTabLayout() {
               style={StyleSheet.absoluteFill}
             />
           ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} />
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: colors.card,
+                  borderRadius: isWide ? 24 : 0,
+                },
+              ]}
+            />
           ) : null,
       }}
     >
@@ -149,7 +181,7 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
+  if (Platform.OS !== 'web' && isLiquidGlassAvailable()) {
     return <NativeTabLayout />;
   }
   return <ClassicTabLayout />;

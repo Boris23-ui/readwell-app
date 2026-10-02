@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StyleProp, ViewStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -8,9 +8,10 @@ import { useCoach } from '@/context/CoachContext';
 
 interface Props {
   onOpenCoach?: () => void;
+  style?: StyleProp<ViewStyle>;
 }
 
-export function WhileYouWereAwayCard({ onOpenCoach }: Props) {
+export function WhileYouWereAwayCard({ onOpenCoach, style }: Props) {
   const colors = useColors();
   const { digest, dismissDigest, strategy } = useCoach();
 
@@ -27,7 +28,7 @@ export function WhileYouWereAwayCard({ onOpenCoach }: Props) {
   };
 
   return (
-    <Animated.View entering={FadeInDown.springify()} style={styles.container}>
+    <Animated.View entering={FadeInDown.springify()} style={[styles.container, style]}>
       <View
         style={[
           styles.feltCard,

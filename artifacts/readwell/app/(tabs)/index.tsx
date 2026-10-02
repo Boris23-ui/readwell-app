@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -24,6 +25,8 @@ import { fetchRecommendations } from '@/utils/api';
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 860;
   const { profile, books, getTodayActivity } = useApp();
   const { strategy, dueFlashcards } = useCoach();
   const [recommendations, setRecommendations] = React.useState<any[]>([]);
@@ -62,10 +65,401 @@ export default function HomeScreen() {
   const topPad = Platform.OS === 'web' ? 44 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  const renderHeroCard = () => (
+    <Animated.View
+      entering={FadeInDown.duration(400)}
+      style={[styles.heroWrapper, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
+    >
+      <View
+        style={[
+          styles.heroFeltCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: `${colors.terracotta}55`,
+            shadowColor: colors.shadow,
+          },
+        ]}
+      >
+        <View style={styles.heroHeaderTag}>
+          <Text style={[styles.heroSeasonTag, { color: colors.terracotta }]}>
+            SEASON 1 · THE INTERACTIVE FLOOR
+          </Text>
+          <View style={[styles.heroLevelPill, { backgroundColor: `${colors.honey}33` }]}>
+            <Text style={[styles.heroLevelText, { color: colors.honeyDeep }]}>
+              LV {profile.level} · {greeting.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.heroTitle, { color: colors.foreground }]}>
+          Reading <Text style={{ color: colors.terracotta }}>Floor</Text>
+        </Text>
+
+        <Text style={[styles.heroParagraph, { color: colors.mutedForeground }]}>
+          One reader. Socratic checkpoints. Run a segment, hit the wall, dialogue with AI,
+          and conquer the quiz — every stage earned on the floor.
+        </Text>
+
+        {/* Duolingo / ADK The Grid Mini Dashboard */}
+        <View style={[styles.gridContainer, { backgroundColor: colors.muted }]}>
+          <View style={styles.gridHeader}>
+            <Text style={[styles.gridHeaderTitle, { color: colors.mutedForeground }]}>
+              THE LEARNING GRID
+            </Text>
+            <Text style={[styles.gridHeaderSub, { color: colors.mutedForeground }]}>
+              who decides next?
+            </Text>
+          </View>
+          <View style={styles.gridRow}>
+            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
+              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
+                Sequential
+              </Text>
+            </View>
+            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
+              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
+                Parallel
+              </Text>
+            </View>
+            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
+              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
+                Socratic
+              </Text>
+            </View>
+            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
+              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
+                Dynamic
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Animated.View>
+  );
+
+  const renderStatsRow = () => (
+    <View style={[styles.statsRow, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}>
+      {/* Streak Card */}
+      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(100).springify()}>
+        <View
+          style={[
+            styles.feltStatCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: profile.streakCurrent > 0 ? `${colors.terracotta}66` : colors.border,
+              shadowColor: colors.shadow,
+            },
+          ]}
+        >
+          <Feather
+            name="zap"
+            size={22}
+            color={profile.streakCurrent > 0 ? colors.terracotta : colors.mutedForeground}
+          />
+          <Text style={[styles.statBigNum, { color: colors.foreground }]}>
+            {profile.streakCurrent}
+          </Text>
+          <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>
+            DAY STREAK
+          </Text>
+        </View>
+      </Animated.View>
+
+      {/* Daily Goal Ring */}
+      <Animated.View style={{ flex: 1.2 }} entering={FadeInDown.delay(180).springify()}>
+        <View
+          style={[
+            styles.feltStatCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: `${colors.honey}66`,
+              shadowColor: colors.shadow,
+            },
+          ]}
+        >
+          <ProgressRing
+            progress={goalProgress}
+            size={76}
+            strokeWidth={7}
+            color={colors.honeyDeep}
+            trackColor={colors.muted}
+          >
+            <View style={styles.ringCenter}>
+              <Text style={[styles.ringNum, { color: colors.foreground }]}>{todayMinutes}</Text>
+              <Text style={[styles.ringMinLabel, { color: colors.mutedForeground }]}>min</Text>
+            </View>
+          </ProgressRing>
+          <Text style={[styles.statLabelMono, { color: colors.mutedForeground, marginTop: 4 }]}>
+            GOAL: {profile.dailyGoalMinutes}M
+          </Text>
+        </View>
+      </Animated.View>
+
+      {/* Total XP / ELO */}
+      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(260).springify()}>
+        <View
+          style={[
+            styles.feltStatCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: `${colors.slateDeep}55`,
+              shadowColor: colors.shadow,
+            },
+          ]}
+        >
+          <Text style={[styles.statBigNum, { color: colors.slateDeep }]}>{profile.xp}</Text>
+          <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>TOTAL XP</Text>
+          <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
+            <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
+          </View>
+          <Text style={[styles.xpNextMono, { color: colors.mutedForeground }]}>
+            {xpProgress.required - xpProgress.current} to Lv {profile.level + 1}
+          </Text>
+        </View>
+      </Animated.View>
+    </View>
+  );
+
+  const renderCoachBanner = () => (
+    <Animated.View
+      entering={FadeInDown.delay(320).springify()}
+      style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
+    >
+      <TouchableOpacity
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push('/(tabs)/messages');
+        }}
+        activeOpacity={0.85}
+      >
+        <View
+          style={[
+            styles.coachBannerFelt,
+            {
+              backgroundColor: colors.card,
+              borderColor: `${colors.terracotta}55`,
+              shadowColor: colors.shadow,
+            },
+          ]}
+        >
+          <View style={[styles.coachAvatarCircle, { backgroundColor: `${colors.terracotta}18` }]}>
+            <Text style={{ fontSize: 24 }}>🦉</Text>
+          </View>
+
+          <View style={{ flex: 1, gap: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={[styles.coachTitle, { color: colors.foreground }]}>
+                Socratic Coach
+              </Text>
+              <View style={[styles.coachVersionPill, { backgroundColor: colors.terracotta }]}>
+                <Text style={styles.coachVersionText}>v{strategy?.version || 1}</Text>
+              </View>
+            </View>
+            <Text style={[styles.coachSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {strategy?.preferredQuestionStyle || 'Scaffolded questions & memory reinforcement'}
+            </Text>
+          </View>
+
+          <View style={styles.coachRightCol}>
+            {dueFlashcards.length > 0 && (
+              <View style={[styles.dueBadge, { backgroundColor: colors.destructive }]}>
+                <Text style={styles.dueBadgeText}>{dueFlashcards.length} DUE</Text>
+              </View>
+            )}
+            <View style={[styles.btnEnterMini, { backgroundColor: colors.honey }]}>
+              <Text style={styles.btnEnterMiniText}>CHAT ▸</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
+  const renderSprintSection = () => (
+    <View style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={[styles.displayHeading, { color: colors.foreground }]}>
+          Pick tonight's sprint
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.push('/import')}
+          style={[styles.importPill, { borderColor: `${colors.terracotta}66` }]}
+        >
+          <Feather name="plus" size={14} color={colors.terracotta} />
+          <Text style={[styles.importPillText, { color: colors.terracotta }]}>IMPORT</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
+        Every reading stage earned on the floor.
+      </Text>
+
+      {currentBooks.length > 0 ? (
+        <View style={{ marginTop: 14 }}>
+          {currentBooks.map(book => (
+            <BookCard
+              key={book.id}
+              book={book}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push(`/reader/${book.id}`);
+              }}
+            />
+          ))}
+        </View>
+      ) : latestBook ? (
+        <View style={{ marginTop: 14 }}>
+          <BookCard
+            book={latestBook}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push(`/reader/${latestBook.id}`);
+            }}
+          />
+        </View>
+      ) : (
+        <Animated.View entering={FadeInRight.delay(350).springify()} style={{ marginTop: 14 }}>
+          <TouchableOpacity
+            onPress={() => router.push('/import')}
+            style={[
+              styles.emptySprintCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            activeOpacity={0.8}
+          >
+            <View
+              style={[styles.emptyIconCircle, { backgroundColor: `${colors.terracotta}18` }]}
+            >
+              <Feather name="book-open" size={28} color={colors.terracotta} />
+            </View>
+            <Text style={[styles.emptySprintTitle, { color: colors.foreground }]}>
+              No documents on the floor
+            </Text>
+            <Text style={[styles.emptySprintSub, { color: colors.mutedForeground }]}>
+              Import a PDF or paste text to generate your first Socratic reading stages.
+            </Text>
+            <View style={[styles.btnFeltAction, { backgroundColor: colors.honey }]}>
+              <Text style={styles.btnFeltActionText}>IMPORT DOCUMENT ▸</Text>
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+    </View>
+  );
+
+  const renderCurations = () => {
+    if (recommendations.length === 0) return null;
+
+    return (
+      <Animated.View
+        entering={FadeInDown.delay(450).springify()}
+        style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
+      >
+        <Text style={[styles.displayHeading, { color: colors.foreground }]}>
+          Recommended Curations
+        </Text>
+        <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
+          Calibrated to your reading level & ELO rating.
+        </Text>
+
+        {isWide ? (
+          <View style={{ gap: 12, marginTop: 12 }}>
+            {recommendations.slice(0, 3).map((rec, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.recFeltCard,
+                  {
+                    width: '100%',
+                    backgroundColor: colors.card,
+                    borderColor: `${colors.slate}66`,
+                    shadowColor: colors.shadow,
+                  },
+                ]}
+              >
+                <View style={styles.recTopRow}>
+                  <View style={[styles.recIconWrap, { backgroundColor: `${colors.slate}22` }]}>
+                    <Feather name="bookmark" size={16} color={colors.slateDeep} />
+                  </View>
+                  <Text style={[styles.recTopicMono, { color: colors.slateDeep }]}>
+                    {rec.topic || 'EXPLORE'}
+                  </Text>
+                </View>
+
+                <Text
+                  style={[styles.recTitleText, { color: colors.foreground }]}
+                  numberOfLines={2}
+                >
+                  {rec.title}
+                </Text>
+
+                <Text
+                  style={[styles.recReasonText, { color: colors.mutedForeground }]}
+                  numberOfLines={3}
+                >
+                  {rec.reason}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 14, paddingTop: 12, paddingBottom: 6 }}
+          >
+            {recommendations.map((rec, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.recFeltCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: `${colors.slate}66`,
+                    shadowColor: colors.shadow,
+                  },
+                ]}
+              >
+                <View style={styles.recTopRow}>
+                  <View style={[styles.recIconWrap, { backgroundColor: `${colors.slate}22` }]}>
+                    <Feather name="bookmark" size={16} color={colors.slateDeep} />
+                  </View>
+                  <Text style={[styles.recTopicMono, { color: colors.slateDeep }]}>
+                    {rec.topic || 'EXPLORE'}
+                  </Text>
+                </View>
+
+                <Text
+                  style={[styles.recTitleText, { color: colors.foreground }]}
+                  numberOfLines={2}
+                >
+                  {rec.title}
+                </Text>
+
+                <Text
+                  style={[styles.recReasonText, { color: colors.mutedForeground }]}
+                  numberOfLines={3}
+                >
+                  {rec.reason}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+      </Animated.View>
+    );
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingTop: topPad, paddingBottom: botPad + 110 }}
+      contentContainerStyle={[
+        styles.scrollContent,
+        {
+          paddingTop: topPad,
+          paddingBottom: botPad + 130,
+        },
+      ]}
       showsVerticalScrollIndicator={false}
     >
       {/* ── Pattern Kitchen Style Top Action Bar ── */}
@@ -124,331 +518,36 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ── Season 1 Hero Felt Card ── */}
-      <Animated.View entering={FadeInDown.duration(400)} style={styles.heroWrapper}>
-        <View
-          style={[
-            styles.heroFeltCard,
-            {
-              backgroundColor: colors.card,
-              borderColor: `${colors.terracotta}55`,
-              shadowColor: colors.shadow,
-            },
-          ]}
-        >
-          <View style={styles.heroHeaderTag}>
-            <Text style={[styles.heroSeasonTag, { color: colors.terracotta }]}>
-              SEASON 1 · THE INTERACTIVE FLOOR
-            </Text>
-            <View style={[styles.heroLevelPill, { backgroundColor: `${colors.honey}33` }]}>
-              <Text style={[styles.heroLevelText, { color: colors.honeyDeep }]}>
-                LV {profile.level} · {greeting.toUpperCase()}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={[styles.heroTitle, { color: colors.foreground }]}>
-            Reading <Text style={{ color: colors.terracotta }}>Floor</Text>
-          </Text>
-
-          <Text style={[styles.heroParagraph, { color: colors.mutedForeground }]}>
-            One reader. Socratic checkpoints. Run a segment, hit the wall, dialogue with AI,
-            and conquer the quiz — every stage earned on the floor.
-          </Text>
-
-          {/* Duolingo / ADK The Grid Mini Dashboard */}
-          <View style={[styles.gridContainer, { backgroundColor: colors.muted }]}>
-            <View style={styles.gridHeader}>
-              <Text style={[styles.gridHeaderTitle, { color: colors.mutedForeground }]}>
-                THE LEARNING GRID
-              </Text>
-              <Text style={[styles.gridHeaderSub, { color: colors.mutedForeground }]}>
-                who decides next?
-              </Text>
-            </View>
-            <View style={styles.gridRow}>
-              <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-                <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                  Sequential
-                </Text>
-              </View>
-              <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-                <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                  Parallel
-                </Text>
-              </View>
-              <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-                <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                  Socratic
-                </Text>
-              </View>
-              <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-                <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                  Dynamic
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* ── While You Were Away Socratic Digest ── */}
-      <WhileYouWereAwayCard onOpenCoach={() => router.push('/(tabs)/messages')} />
-
-      {/* ── Daily Habit Stats Trio (Felt Cards) ── */}
-      <View style={styles.statsRow}>
-        {/* Streak Card */}
-        <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(100).springify()}>
-          <View
-            style={[
-              styles.feltStatCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: profile.streakCurrent > 0 ? `${colors.terracotta}66` : colors.border,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <Feather
-              name="zap"
-              size={22}
-              color={profile.streakCurrent > 0 ? colors.terracotta : colors.mutedForeground}
-            />
-            <Text style={[styles.statBigNum, { color: colors.foreground }]}>
-              {profile.streakCurrent}
-            </Text>
-            <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>
-              DAY STREAK
-            </Text>
-          </View>
-        </Animated.View>
-
-        {/* Daily Goal Ring */}
-        <Animated.View style={{ flex: 1.2 }} entering={FadeInDown.delay(180).springify()}>
-          <View
-            style={[
-              styles.feltStatCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: `${colors.honey}66`,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <ProgressRing
-              progress={goalProgress}
-              size={76}
-              strokeWidth={7}
-              color={colors.honeyDeep}
-              trackColor={colors.muted}
-            >
-              <View style={styles.ringCenter}>
-                <Text style={[styles.ringNum, { color: colors.foreground }]}>{todayMinutes}</Text>
-                <Text style={[styles.ringMinLabel, { color: colors.mutedForeground }]}>min</Text>
-              </View>
-            </ProgressRing>
-            <Text style={[styles.statLabelMono, { color: colors.mutedForeground, marginTop: 4 }]}>
-              GOAL: {profile.dailyGoalMinutes}M
-            </Text>
-          </View>
-        </Animated.View>
-
-        {/* Total XP / ELO */}
-        <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(260).springify()}>
-          <View
-            style={[
-              styles.feltStatCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: `${colors.slateDeep}55`,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <Text style={[styles.statBigNum, { color: colors.slateDeep }]}>{profile.xp}</Text>
-            <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>TOTAL XP</Text>
-            <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
-              <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
-            </View>
-            <Text style={[styles.xpNextMono, { color: colors.mutedForeground }]}>
-              {xpProgress.required - xpProgress.current} to Lv {profile.level + 1}
-            </Text>
-          </View>
-        </Animated.View>
-      </View>
-
-      {/* ── Active Socratic Coach Banner ── */}
-      <Animated.View entering={FadeInDown.delay(320).springify()} style={styles.section}>
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push('/(tabs)/messages');
-          }}
-          activeOpacity={0.85}
-        >
-          <View
-            style={[
-              styles.coachBannerFelt,
-              {
-                backgroundColor: colors.card,
-                borderColor: `${colors.terracotta}55`,
-                shadowColor: colors.shadow,
-              },
-            ]}
-          >
-            <View style={[styles.coachAvatarCircle, { backgroundColor: `${colors.terracotta}18` }]}>
-              <Text style={{ fontSize: 24 }}>🦉</Text>
-            </View>
-
-            <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.coachTitle, { color: colors.foreground }]}>
-                  Socratic Coach
-                </Text>
-                <View style={[styles.coachVersionPill, { backgroundColor: colors.terracotta }]}>
-                  <Text style={styles.coachVersionText}>v{strategy?.version || 1}</Text>
-                </View>
-              </View>
-              <Text style={[styles.coachSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {strategy?.preferredQuestionStyle || 'Scaffolded questions & memory reinforcement'}
-              </Text>
-            </View>
-
-            <View style={styles.coachRightCol}>
-              {dueFlashcards.length > 0 && (
-                <View style={[styles.dueBadge, { backgroundColor: colors.destructive }]}>
-                  <Text style={styles.dueBadgeText}>{dueFlashcards.length} DUE</Text>
-                </View>
-              )}
-              <View style={[styles.btnEnterMini, { backgroundColor: colors.honey }]}>
-                <Text style={styles.btnEnterMiniText}>CHAT ▸</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {/* ── Pick Tonight's Sprint (Stages) ── */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.displayHeading, { color: colors.foreground }]}>
-            Pick tonight's sprint
-          </Text>
-          <TouchableOpacity
-            onPress={() => router.push('/import')}
-            style={[styles.importPill, { borderColor: `${colors.terracotta}66` }]}
-          >
-            <Feather name="plus" size={14} color={colors.terracotta} />
-            <Text style={[styles.importPillText, { color: colors.terracotta }]}>IMPORT</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
-          Every reading stage earned on the floor.
-        </Text>
-
-        {currentBooks.length > 0 ? (
-          <View style={{ marginTop: 14 }}>
-            {currentBooks.map(book => (
-              <BookCard
-                key={book.id}
-                book={book}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push(`/reader/${book.id}`);
-                }}
-              />
-            ))}
-          </View>
-        ) : latestBook ? (
-          <View style={{ marginTop: 14 }}>
-            <BookCard
-              book={latestBook}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push(`/reader/${latestBook.id}`);
-              }}
+      {/* ── Responsive Dashboard Area ── */}
+      {isWide ? (
+        <View style={styles.dashboardRow}>
+          {/* Left Column: Sprints & Reading Core */}
+          <View style={styles.dashboardLeftCol}>
+            {renderHeroCard()}
+            {renderSprintSection()}
+            <WhileYouWereAwayCard
+              style={{ paddingHorizontal: 0, marginBottom: 0 }}
+              onOpenCoach={() => router.push('/(tabs)/messages')}
             />
           </View>
-        ) : (
-          <Animated.View entering={FadeInRight.delay(350).springify()} style={{ marginTop: 14 }}>
-            <TouchableOpacity
-              onPress={() => router.push('/import')}
-              style={[
-                styles.emptySprintCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-              activeOpacity={0.8}
-            >
-              <View
-                style={[styles.emptyIconCircle, { backgroundColor: `${colors.terracotta}18` }]}
-              >
-                <Feather name="book-open" size={28} color={colors.terracotta} />
-              </View>
-              <Text style={[styles.emptySprintTitle, { color: colors.foreground }]}>
-                No documents on the floor
-              </Text>
-              <Text style={[styles.emptySprintSub, { color: colors.mutedForeground }]}>
-                Import a PDF or paste text to generate your first Socratic reading stages.
-              </Text>
-              <View style={[styles.btnFeltAction, { backgroundColor: colors.honey }]}>
-                <Text style={styles.btnFeltActionText}>IMPORT DOCUMENT ▸</Text>
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-      </View>
 
-      {/* ── Recommended Curations ── */}
-      {recommendations.length > 0 && (
-        <Animated.View entering={FadeInDown.delay(450).springify()} style={styles.section}>
-          <Text style={[styles.displayHeading, { color: colors.foreground }]}>
-            Recommended Curations
-          </Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
-            Calibrated to your reading level & ELO rating.
-          </Text>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 14, paddingTop: 12, paddingBottom: 6 }}
-          >
-            {recommendations.map((rec, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.recFeltCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: `${colors.slate}66`,
-                    shadowColor: colors.shadow,
-                  },
-                ]}
-              >
-                <View style={styles.recTopRow}>
-                  <View style={[styles.recIconWrap, { backgroundColor: `${colors.slate}22` }]}>
-                    <Feather name="bookmark" size={16} color={colors.slateDeep} />
-                  </View>
-                  <Text style={[styles.recTopicMono, { color: colors.slateDeep }]}>
-                    {rec.topic || 'EXPLORE'}
-                  </Text>
-                </View>
-
-                <Text style={[styles.recTitleText, { color: colors.foreground }]} numberOfLines={2}>
-                  {rec.title}
-                </Text>
-
-                <Text
-                  style={[styles.recReasonText, { color: colors.mutedForeground }]}
-                  numberOfLines={3}
-                >
-                  {rec.reason}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-        </Animated.View>
+          {/* Right Column: Telemetry, Socratic Coach & Curations */}
+          <View style={styles.dashboardRightCol}>
+            {renderStatsRow()}
+            {renderCoachBanner()}
+            {renderCurations()}
+          </View>
+        </View>
+      ) : (
+        /* Mobile Linear Order */
+        <>
+          {renderHeroCard()}
+          <WhileYouWereAwayCard onOpenCoach={() => router.push('/(tabs)/messages')} />
+          {renderStatsRow()}
+          {renderCoachBanner()}
+          {renderSprintSection()}
+          {renderCurations()}
+        </>
       )}
 
       {/* Footer Pattern Mantra */}
@@ -464,6 +563,26 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    maxWidth: 1200,
+    width: '100%',
+    marginHorizontal: 'auto',
+  },
+  dashboardRow: {
+    flexDirection: 'row',
+    gap: 24,
+    paddingHorizontal: 20,
+    alignItems: 'flex-start',
+    marginBottom: 24,
+  },
+  dashboardLeftCol: {
+    flex: 1.15,
+    gap: 24,
+  },
+  dashboardRightCol: {
+    flex: 0.85,
+    gap: 24,
   },
   topBar: {
     flexDirection: 'row',

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -7,6 +8,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AppProvider } from '@/context/CloudAppContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { CoachProvider } from '@/context/CoachContext';
+import { useColors } from '@/hooks/useColors';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -47,6 +49,35 @@ function RootLayoutNav() {
   );
 }
 
+function WebContainer({ children }: { children: React.ReactNode }) {
+  const colors = useColors();
+  const { width } = useWindowDimensions();
+
+  if (Platform.OS !== 'web') {
+    return <>{children}</>;
+  }
+
+  const isWide = width > 1240;
+
+  return (
+    <View style={[styles.webOuter, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.webInner,
+          {
+            backgroundColor: colors.background,
+            borderColor: isWide ? `${colors.border}66` : 'transparent',
+            borderLeftWidth: isWide ? 1 : 0,
+            borderRightWidth: isWide ? 1 : 0,
+          },
+        ]}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   const [interLoaded, interError] = useInterFonts({
     Inter_400Regular,
@@ -82,7 +113,9 @@ export default function RootLayout() {
               <AuthProvider>
                 <AppProvider>
                   <CoachProvider>
-                    <RootLayoutNav />
+                    <WebContainer>
+                      <RootLayoutNav />
+                    </WebContainer>
                   </CoachProvider>
                 </AppProvider>
               </AuthProvider>
@@ -93,3 +126,20 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  webOuter: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+  },
+  webInner: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 1200,
+    height: '100%',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+});
