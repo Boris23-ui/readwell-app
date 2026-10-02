@@ -140,6 +140,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           );
           await AsyncStorage.setItem(STORAGE_KEYS.PENDING_PDF_IMPORTS, JSON.stringify(stillPending));
         }
+
+        // ── Pending deletion retry ─────────────────────────────────────────
+        // If deletePdfPages failed (e.g. device was offline) when the user
+        // deleted a book, the serverBookId was left in PENDING_PDF_DELETIONS.
+        // On every launch we retry those deletions and remove the ones that
+        // succeed.
+        const deletionsRaw = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS);
+        if (deletionsRaw) {
+          const pendingDeletions: string[] = JSON.parse(deletionsRaw);
+          if (pendingDeletions.length > 0) {
+            const results = await Promise.allSettled(
+              pendingDeletions.map(bookId => deletePdfPages(bookId)),
+            );
+            const stillFailing = pendingDeletions.filter((_, i) => results[i].status === 'rejected');
+            await AsyncStorage.setItem(
+              STORAGE_KEYS.PENDING_PDF_DELETIONS,
+              JSON.stringify(stillFailing),
+            );
+          }
+        }
       } catch (e) {
         console.error('Failed to load application data:', e);
       } finally {
@@ -219,7 +239,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const match = imageUrl.match(/\/objects\/pdf-pages\/([^/]+)\//);
         if (match) {
           const serverBookId = match[1];
-          deletePdfPages(serverBookId).catch(console.error);
+          // Enqueue the deletion before attempting it. If the network call
+          // fails (e.g. device is offline), the entry stays in the queue and
+          // is retried on the next app launch.
+          AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS)
+            .then(raw => {
+              const queue: string[] = raw ? JSON.parse(raw) : [];
+              if (!queue.includes(serverBookId)) {
+                queue.push(serverBookId);
+              }
+              return AsyncStorage.setItem(
+                STORAGE_KEYS.PENDING_PDF_DELETIONS,
+                JSON.stringify(queue),
+              );
+            })
+            .then(() => deletePdfPages(serverBookId))
+            .then(() => {
+              // Deletion succeeded — remove from the queue.
+              AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS)
+                .then(raw => {
+                  const queue: string[] = raw ? JSON.parse(raw) : [];
+                  const trimmed = queue.filter(bid => bid !== serverBookId);
+                  return AsyncStorage.setItem(
+                    STORAGE_KEYS.PENDING_PDF_DELETIONS,
+                    JSON.stringify(trimmed),
+                  );
+                })
+                .catch(() => {});
+            })
+            .catch(() => {
+              // Deletion failed (offline or server error). The serverBookId
+              // remains in PENDING_PDF_DELETIONS and will be retried on the
+              // next app launch.
+              console.warn(
+                'deleteBook: PDF page deletion failed; will retry on next launch for bookId',
+                serverBookId,
+              );
+            });
         }
       }
       return updated;

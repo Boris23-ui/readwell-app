@@ -207,18 +207,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         let savedBooks: Book[] = [];
+        let droppedBookCount = 0;
         if (br) {
           const parsed = JSON.parse(br);
           if (Array.isArray(parsed)) {
             savedBooks = parsed.filter(b => {
               const res = BookSchema.safeParse(b);
               if (!res.success) {
+                droppedBookCount++;
                 console.warn(`Book ${b.id} data corrupted, filtering out`, res.error);
                 return false;
               }
               return true;
             }) as Book[];
           }
+        }
+
+        if (droppedBookCount > 0) {
+          console.warn(
+            `ReadWell: ${droppedBookCount} book(s) had corrupted data and were removed from your library. ` +
+            `Re-import the affected documents to restore them.`,
+          );
         }
 
         // ── OCR backfill migration ──────────────────────────────────────────
@@ -454,6 +463,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     const newTotalXp = profile.xp + session.xpEarned;
+    const newElo = (profile.elo || 100) + (session.eloEarned || 0);
+    const newXpDomains = {
+      ...profile.xpDomains,
+      general: (profile.xpDomains?.general || 0) + session.xpEarned,
+    };
     const newLevel = getLevelFromXp(newTotalXp);
     const newTotalMinutes = profile.totalMinutesRead + minutesRead;
 
@@ -490,6 +504,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const updatedProfile: UserProfile = {
       ...profile,
       xp: newTotalXp,
+      elo: newElo,
+      xpDomains: newXpDomains,
       level: newLevel,
       streakCurrent: newStreak,
       streakBest: Math.max(profile.streakBest, newStreak),
