@@ -85,5 +85,4 @@ allowBuilds:
   '@firebase/util': false
   '@google/genai': true
   esbuild: true
-  gl: true
   protobufjs: true

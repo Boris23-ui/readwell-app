@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inferOcrUsed, applyOcrMigration, parsePendingImports } from './AppContext';
+import { inferOcrUsed, applyOcrMigration, parsePendingImports } from './ocr';
 import type { Book, PdfPage } from '@/types';
 
 // ---------------------------------------------------------------------------

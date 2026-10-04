@@ -1,45 +1,49 @@
-# [Project name]
+# ReadWell
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+ReadWell is a Duolingo-style AI reading companion that helps readers build consistent reading habits through AI-generated comprehension quizzes.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/readwell run dev` — run the Expo mobile app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env for API: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` (in Replit Secrets)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Mobile: Expo 54, React Native, Expo Router
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- DB/Auth: Supabase (Postgres) accessed via `@supabase/supabase-js`
+- Storage: Replit Object Storage
+- AI: Google Gemini API
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- **App:** `artifacts/readwell/` (Expo project)
+- **API:** `artifacts/api-server/` (Express project)
+- **Blueprint:** `docs/blueprint.md` (Product vision and requirements)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Mobile First:** Focus on iOS/Android via Expo.
+- **Direct DB Access:** The mobile app calls Supabase directly for authentication, goals, and simple data.
+- **Secure API server:** API keys for Gemini and object storage live strictly in the Express API server.
+- **Coach Memory:** The Coach memory uses Supabase to persist user conversations, strategies, and flashcards.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Users can upload PDFs, read them segment by segment, and answer automatically generated comprehension checks. The AI coach tracks performance and adapts.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Stick to the `implementation_plan.md` track.
+- Prefer smaller, incremental PR-sized changes.
+- Avoid introducing database migrations unless strictly required.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Do not expose `GEMINI_API_KEY` to the Expo client app.
+- When generating quizzes, the response must be validated to ensure evidence quotes exist in the text.
+- Do not add features outside the `implementation_plan.md` without confirmation.

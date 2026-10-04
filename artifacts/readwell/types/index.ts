@@ -12,7 +12,8 @@ export interface UserProfile {
   totalXp?: number;
   xpDomains: Record<string, number>;
   level: number;
-  elo: number;
+  comprehensionScore: number;
+  comprehensionTrend?: 'up' | 'down' | 'flat';
   streakCurrent: number;
   streakBest: number;
   lastReadDate: string | null;
@@ -20,12 +21,8 @@ export interface UserProfile {
   onboardingComplete: boolean;
   totalMinutesRead: number;
   totalBooksFinished: number;
-  tokens: number;
-  createdAt: string;
-  role?: 'learner' | 'sponsor';
-  sponsorId?: string | null;
-  allocatedTokens?: number;
   email?: string;
+  createdAt: string;
 }
 
 export const UserProfileSchema = z.object({
@@ -40,7 +37,8 @@ export const UserProfileSchema = z.object({
   totalXp: z.number().optional(),
   xpDomains: z.record(z.number()).default({ general: 0, fiction: 0, technical: 0, science: 0 }),
   level: z.number(),
-  elo: z.number().default(100).catch(100),
+  comprehensionScore: z.number().default(0).catch(0),
+  comprehensionTrend: z.enum(['up', 'down', 'flat']).optional(),
   streakCurrent: z.number(),
   streakBest: z.number(),
   lastReadDate: z.string().nullable(),
@@ -48,11 +46,7 @@ export const UserProfileSchema = z.object({
   onboardingComplete: z.boolean(),
   totalMinutesRead: z.number(),
   totalBooksFinished: z.number(),
-  tokens: z.number().default(15).catch(15),
   createdAt: z.string(),
-  role: z.enum(['learner', 'sponsor']).optional(),
-  sponsorId: z.string().nullable().optional(),
-  allocatedTokens: z.number().optional(),
 }).passthrough();
 
 export type BadgeKey =
@@ -137,6 +131,7 @@ export interface Question {
   options?: string[];
   correctIndex?: number;
   evidenceQuote?: string;
+  explanation?: string;
   isOpenEnded: boolean;
 }
 
@@ -165,7 +160,6 @@ export interface ReadingSession {
   segmentsCompleted: number;
   comprehensionScore: number;
   xpEarned: number;
-  eloEarned?: number;
 }
 
 export interface DailyActivity {
@@ -277,12 +271,5 @@ export interface ReadingPlan {
   schedule: ReadingPlanItem[];
 }
 
-export interface LeaderboardUser {
-  id: string;
-  name?: string;
-  displayName?: string;
-  xp: number;
-  level: number;
-  streakCurrent: number;
-}
+
 

@@ -16,10 +16,11 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
-import { generateQuiz } from '@/utils/api';
+import { generateQuiz, evaluateReflection } from '@/utils/api';
 import { Question, Quiz } from '@/types';
 import { calculateSessionXp } from '@/utils/xp';
 import { isTextQualityTooLow } from '@/utils/content';
+import { addMissedQuestion } from '@/utils/reviewQueue';
 
 type QuizGenerationError = Error & { code?: string };
 
@@ -29,6 +30,7 @@ const RETRYABLE_QUIZ_ERROR_CODES = new Set([
   'GEMINI_TIMEOUT',
   'GEMINI_INVALID_RESPONSE',
   'GEMINI_UNAVAILABLE',
+  'QUIZ_GENERATION_FAILED',
 ]);
 
 function getQuizErrorMessage(code?: string): string {
@@ -49,6 +51,8 @@ function getQuizErrorMessage(code?: string): string {
       return 'The AI returned an unusable quiz. Please try again.';
     case 'GEMINI_UNAVAILABLE':
       return 'The quiz service is temporarily unavailable. Please try again.';
+    case 'QUIZ_GENERATION_FAILED':
+      return "We couldn't build a good check for this section.";
     default:
       return 'Could not generate quiz. Please try again.';
   }
@@ -68,7 +72,7 @@ export default function QuizScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, profile, consumeToken } = useApp();
+  const { getBookById, profile } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -80,7 +84,11 @@ export default function QuizScreen() {
   const [answers, setAnswers] = useState<(number | string | null)[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [freeText, setFreeText] = useState('');
+  const [reflectionFeedback, setReflectionFeedback] = useState('');
   const [slideAnim] = useState(new Animated.Value(0));
+
+  const segment = book?.segments[segmentIndex];
+  const segmentText = segment?.paragraphs.join('\n\n') ?? '';
 
   useEffect(() => {
     if (!book) return;
@@ -106,25 +114,19 @@ export default function QuizScreen() {
       return;
     }
 
-    // Guard against out of tokens
-    if (profile.tokens <= 0) {
-      setLoadError('Out of Quiz Tokens. Read more to earn tokens or buy a refill in your profile!');
-      setLoadErrorCode('OUT_OF_TOKENS');
-      setLoading(false);
-      return;
-    }
 
-    // Pass ML inputs: elo, secondsRead, wordCount, complexity
-    const elo = profile.elo ?? 1200;
+
+    // Pass ML inputs: comprehensionScore, secondsRead, wordCount, complexity
+    const comprehensionScore = profile.comprehensionScore ?? 0;
     const complexity = book.complexityIndex || 1.0;
     
-    generateQuiz(segmentText, profile.readingLevel ?? 'intermediate', elo, secondsRead, wordCount, complexity)
+    generateQuiz(segmentText, profile.readingLevel ?? 'intermediate', comprehensionScore, secondsRead, wordCount, complexity)
       .then(data => {
         const q: Quiz = { questions: data.questions };
         setQuiz(q);
         setAnswers(new Array(data.questions.length).fill(null));
         setLoading(false);
-        consumeToken();
+
       })
       .catch(err => {
         console.error('Quiz generation error:', err);
@@ -164,57 +166,46 @@ export default function QuizScreen() {
     );
   }
 
+  const handleContinueReading = () => {
+    const minutesRead = Math.floor(secondsRead / 60);
+    const xpEarned = calculateSessionXp(minutesRead, 0, 0, false);
+    router.replace({
+      pathname: '/session-summary/[bookId]',
+      params: {
+        bookId: book.id,
+        segmentIndex: String(segmentIndex),
+        score: '0',
+        total: '0',
+        xpEarned: String(xpEarned),
+        secondsRead: String(secondsRead),
+        complexityIndex: '1.0',
+      },
+    });
+  };
+
   if (loadError || !quiz) {
     const isQualityError = loadError.startsWith('Text quality too low');
-    const isTokenError = loadErrorCode === 'OUT_OF_TOKENS';
+    const isGenerationFailed = loadErrorCode === 'QUIZ_GENERATION_FAILED';
     const isRetryableError =
       !isQualityError &&
-      !isTokenError &&
       RETRYABLE_QUIZ_ERROR_CODES.has(loadErrorCode ?? '');
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Feather
-          name={isQualityError ? 'alert-triangle' : isTokenError ? 'lock' : 'alert-circle'}
+          name={isQualityError ? 'alert-triangle' : 'alert-circle'}
           size={32}
-          color={isQualityError ? colors.mutedForeground : isTokenError ? '#EAB308' : colors.destructive}
+          color={isQualityError ? colors.mutedForeground : colors.destructive}
         />
         <Text style={[styles.errorTxt, { color: colors.foreground }]}>
           {loadError || 'Failed to load quiz'}
         </Text>
-        {isTokenError ? (
+        {isQualityError ? (
           <>
             <TouchableOpacity
-              onPress={() => router.push('/(tabs)/profile')}
-              style={[styles.retryBtn, { backgroundColor: '#EAB308' }]}
-            >
-              <Text style={styles.retryBtnText}>Go to Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.back()}>
-              <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
-            </TouchableOpacity>
-          </>
-        ) : isQualityError ? (
-          <>
-            <TouchableOpacity
-              onPress={() => {
-                const minutesRead = Math.floor(secondsRead / 60);
-                const xpEarned = calculateSessionXp(minutesRead, 0, 0, false);
-                router.replace({
-                  pathname: '/session-summary/[bookId]',
-                  params: {
-                    bookId: book.id,
-                    segmentIndex: String(segmentIndex),
-                    score: '0',
-                    total: '0',
-                    xpEarned: String(xpEarned),
-                    secondsRead: String(secondsRead),
-                    complexityIndex: '1.0',
-                  },
-                });
-              }}
+              onPress={handleContinueReading}
               style={[styles.retryBtn, { backgroundColor: colors.primary }]}
             >
-              <Text style={styles.retryBtnText}>Skip quiz</Text>
+              <Text style={styles.retryBtnText}>Continue reading</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.back()}>
               <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
@@ -231,12 +222,20 @@ export default function QuizScreen() {
                   setLoading(true);
                   setRetryNonce((value) => value + 1);
                 }}
-                style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+                style={[styles.retryBtn, { backgroundColor: colors.primary, marginBottom: isGenerationFailed ? 12 : 0 }]}
               >
-                <Text style={styles.retryBtnText}>Regenerate Quiz</Text>
+                <Text style={styles.retryBtnText}>Retry</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity onPress={() => router.back()}>
+            {isGenerationFailed && (
+              <TouchableOpacity
+                onPress={handleContinueReading}
+                style={[styles.retryBtn, { backgroundColor: colors.muted }]}
+              >
+                <Text style={[styles.retryBtnText, { color: colors.foreground }]}>Continue reading</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => router.back()} style={{ marginTop: isGenerationFailed ? 12 : 0 }}>
               <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
             </TouchableOpacity>
           </>
@@ -263,6 +262,11 @@ export default function QuizScreen() {
       const newAnswers = [...answers];
       newAnswers[currentQ] = freeText;
       setAnswers(newAnswers);
+
+      setReflectionFeedback('Evaluating your reflection...');
+      evaluateReflection(freeText, question.prompt, segmentText)
+        .then(res => setReflectionFeedback(res.feedback))
+        .catch(() => setReflectionFeedback('Reflection recorded. There\'s no wrong answer here — it\'s about engaging with the text.'));
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRevealed(true);
@@ -275,7 +279,14 @@ export default function QuizScreen() {
       // Calculate score
       let score = 0;
       quiz.questions.forEach((q, i) => {
-        if (!q.isOpenEnded && answers[i] === q.correctIndex) score++;
+        if (!q.isOpenEnded) {
+          if (answers[i] === q.correctIndex) {
+            score++;
+          } else if (typeof answers[i] === 'number') {
+            // Queue missed questions for spaced repetition review
+            addMissedQuestion(book.id, book.title, q, answers[i] as number).catch(console.warn);
+          }
+        }
       });
 
       const minutesRead = Math.floor(secondsRead / 60);
@@ -306,6 +317,7 @@ export default function QuizScreen() {
     setCurrentQ(q => q + 1);
     setRevealed(false);
     setFreeText('');
+    setReflectionFeedback('');
   };
 
   const isCorrect = !question.isOpenEnded && currentAnswer === question.correctIndex;
@@ -444,22 +456,44 @@ export default function QuizScreen() {
             />
           )}
 
-          {/* Evidence quote */}
-          {revealed && question.evidenceQuote && (
-            <View style={[styles.evidenceBox, { backgroundColor: `${book.coverColor}10`, borderColor: `${book.coverColor}30` }]}>
-              <Feather name="book-open" size={14} color={book.coverColor} />
-              <Text style={[styles.evidenceText, { color: colors.foreground }]}>
-                "{question.evidenceQuote}"
-              </Text>
+          {/* Explanation and Evidence */}
+          {revealed && !question.isOpenEnded && (
+            <View style={{ gap: 12, marginTop: 16 }}>
+              {question.explanation && (
+                <View style={[styles.evidenceBox, { backgroundColor: `${colors.sage}15`, borderColor: `${colors.sageDeep}40` }]}>
+                  <Feather name="info" size={14} color={colors.sageDeep} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: colors.sageDeep, textTransform: 'uppercase', letterSpacing: 0.5 }}>Why</Text>
+                    <Text style={[styles.evidenceText, { color: colors.foreground, fontStyle: 'normal' }]}>
+                      {question.explanation}
+                    </Text>
+                  </View>
+                </View>
+              )}
+              {question.evidenceQuote && (
+                <View style={[styles.evidenceBox, { backgroundColor: `${book.coverColor}10`, borderColor: `${book.coverColor}30` }]}>
+                  <Feather name="book-open" size={14} color={book.coverColor} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter_600SemiBold', color: book.coverColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>Here's where the text said this</Text>
+                    <Text style={[styles.evidenceText, { color: colors.foreground }]}>
+                      "{question.evidenceQuote}"
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
           {/* Open-ended accepted confirmation */}
           {revealed && question.isOpenEnded && (
             <View style={[styles.evidenceBox, { backgroundColor: `${colors.sage}15`, borderColor: `${colors.sageDeep}40` }]}>
-              <Feather name="check-circle" size={14} color={colors.sageDeep} />
+              {reflectionFeedback === 'Evaluating your reflection...' ? (
+                <ActivityIndicator size="small" color={colors.sageDeep} />
+              ) : (
+                <Feather name="check-circle" size={14} color={colors.sageDeep} />
+              )}
               <Text style={[styles.evidenceText, { color: colors.foreground }]}>
-                Reflection recorded. There's no wrong answer here — it's about engaging with the text.
+                {reflectionFeedback}
               </Text>
             </View>
           )}

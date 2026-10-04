@@ -98,6 +98,38 @@ export default function StatsScreen() {
         <WeeklyChart activities={dailyActivities} goalMinutes={profile.dailyGoalMinutes} />
       </Animated.View>
 
+      {/* Comprehension Score — felt card */}
+      <Animated.View
+        entering={FadeInDown.delay(150).springify()}
+        layout={Layout.springify()}
+        style={[
+          styles.section,
+          styles.feltCard,
+          { backgroundColor: colors.card, borderColor: `${colors.slateDeep}55`, shadowColor: colors.shadow },
+        ]}
+      >
+        <Text style={[styles.cardTitle, { color: colors.foreground }]}>Comprehension</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 36, fontFamily: 'Newsreader_700Bold', color: colors.slateDeep }}>{profile.comprehensionScore}</Text>
+            <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.8 }}>SCORE</Text>
+          </View>
+          <View style={{ flex: 1, paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: colors.border }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              {profile.comprehensionTrend === 'up' && <Feather name="trending-up" size={16} color={colors.sageDeep} />}
+              {profile.comprehensionTrend === 'down' && <Feather name="trending-down" size={16} color={colors.terracotta} />}
+              {profile.comprehensionTrend === 'flat' && <Feather name="minus" size={16} color={colors.mutedForeground} />}
+              <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
+                {profile.comprehensionTrend === 'up' ? 'Growing strong' : profile.comprehensionTrend === 'down' ? 'Needs focus' : 'Steady progress'}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, lineHeight: 18 }}>
+              This score adapts to your reading difficulty. Keep reading to build it up.
+            </Text>
+          </View>
+        </View>
+      </Animated.View>
+
       {/* Streak info — felt card */}
       <Animated.View
         entering={FadeInDown.delay(200).springify()}

@@ -12,7 +12,7 @@ import {
 } from '@/types';
 import { deletePdfPages } from '@/utils/api';
 import { runOrphanCleanup, type PendingPdfImport } from './orphanCleanup';
-import { applyOcrMigration, parsePendingImports } from './AppContext';
+import { applyOcrMigration, parsePendingImports } from '../utils/ocr';
 import {
   getProfileFromDb,
   saveProfileToDb,
@@ -39,7 +39,8 @@ export const DEFAULT_PROFILE: UserProfile = {
   xp: 0,
   xpDomains: { general: 0, fiction: 0, technical: 0, science: 0 },
   level: 1,
-  elo: 100,
+  comprehensionScore: 0,
+  comprehensionTrend: 'flat',
   streakCurrent: 0,
   streakBest: 0,
   lastReadDate: null,
@@ -47,7 +48,6 @@ export const DEFAULT_PROFILE: UserProfile = {
   onboardingComplete: false,
   totalMinutesRead: 0,
   totalBooksFinished: 0,
-  tokens: 15,
   createdAt: new Date().toISOString(),
 };
 
@@ -87,8 +87,6 @@ interface AppContextType {
   getBookById: (id: string) => Book | undefined;
   registerPendingPdfImport: (serverBookId: string) => Promise<void>;
   clearPendingPdfImport: (serverBookId: string) => Promise<void>;
-  consumeToken: () => boolean;
-  addTokens: (amount: number) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -189,22 +187,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [user]);
 
-  const consumeToken = useCallback((): boolean => {
-    if (profile.tokens <= 0) return false;
-    const currentUserId = user?.uid || 'guest_user';
-    const updated = { ...profile, tokens: profile.tokens - 1 };
-    setProfile(updated);
-    saveProfileToDb(currentUserId, updated).catch(console.error);
-    return true;
-  }, [profile, user]);
-
-  const addTokens = useCallback((amount: number) => {
-    if (amount <= 0) return;
-    const currentUserId = user?.uid || 'guest_user';
-    const updated = { ...profile, tokens: profile.tokens + amount };
-    setProfile(updated);
-    saveProfileToDb(currentUserId, updated).catch(console.error);
-  }, [profile, user]);
 
   const addBook = useCallback(async (book: Book) => {
     const currentUserId = user?.uid || 'guest_user';
@@ -335,7 +317,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     const newTotalXp = profile.xp + session.xpEarned;
-    const newElo = (profile.elo || 100) + (session.eloEarned || 0);
+
+    const updatedSessions = [session, ...sessions];
+    const recentSessions = updatedSessions.slice(0, 20);
+    let newComprehensionScore = profile.comprehensionScore || 0;
+    let newComprehensionTrend: 'up' | 'down' | 'flat' = profile.comprehensionTrend || 'flat';
+
+    if (recentSessions.length > 0) {
+      let totalWeight = 0;
+      let weightedSum = 0;
+      recentSessions.forEach((s, index) => {
+        const weight = Math.pow(0.9, index);
+        weightedSum += (s.comprehensionScore || 0) * weight;
+        totalWeight += weight;
+      });
+      const calculatedScore = Math.round(weightedSum / totalWeight);
+
+      const oldScore = profile.comprehensionScore || 0;
+      if (oldScore > 0) {
+        if (calculatedScore > oldScore + 2) newComprehensionTrend = 'up';
+        else if (calculatedScore < oldScore - 2) newComprehensionTrend = 'down';
+        else newComprehensionTrend = 'flat';
+      }
+      
+      newComprehensionScore = calculatedScore;
+    }
+
     const newXpDomains = {
       ...profile.xpDomains,
       general: (profile.xpDomains?.general || 0) + session.xpEarned,
@@ -376,7 +383,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const updatedProfile: UserProfile = {
       ...profile,
       xp: newTotalXp,
-      elo: newElo,
+      comprehensionScore: newComprehensionScore,
+      comprehensionTrend: newComprehensionTrend,
       xpDomains: newXpDomains,
       level: newLevel,
       streakCurrent: newStreak,
@@ -444,8 +452,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         getBookById,
         registerPendingPdfImport,
         clearPendingPdfImport,
-        consumeToken,
-        addTokens,
       }}
     >
       {children}

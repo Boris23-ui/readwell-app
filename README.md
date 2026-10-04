@@ -26,14 +26,9 @@ API usage, see [`AGENTS.md`](AGENTS.md).
 
 ```text
 artifacts/
-├── api-server/       Express API for extraction, PDF rendering, storage, and quizzes
+├── api-server/       Express API for extraction, PDF rendering, storage, quizzes, and coach
 ├── mockup-sandbox/   Isolated component preview server
 └── readwell/         Expo mobile application
-lib/
-├── api-client-react/ Generated React API hooks
-├── api-spec/         OpenAPI source and code generation
-├── api-zod/          Shared API validation schemas
-└── db/               Database package and schema helpers
 ```
 
 ## Prerequisites
@@ -41,8 +36,8 @@ lib/
 - Node.js 24
 - pnpm
 - Expo Go on a physical iOS or Android device, if testing the mobile app
-- A configured Replit environment with:
-  - a PostgreSQL database
+- A configured environment with:
+  - a Supabase project (Auth + Postgres)
   - Replit Object Storage
   - a Google Gemini API key, such as one created in Google AI Studio
 

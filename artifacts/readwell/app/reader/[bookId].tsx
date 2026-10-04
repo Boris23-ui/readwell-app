@@ -25,7 +25,7 @@ export default function ReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, updateBook, consumeToken, profile } = useApp();
+  const { getBookById, updateBook } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [showFinishCard, setShowFinishCard] = useState(false);
@@ -91,18 +91,12 @@ export default function ReaderScreen() {
 
   const handleSimplify = async () => {
     if (!segment) return;
-    
-    if (profile.tokens <= 0) {
-      Alert.alert('Not enough tokens', 'You need at least 1 token to simplify this section.');
-      return;
-    }
 
     try {
       setIsSimplifying(true);
       const combinedText = segment.paragraphs.join(' ');
       const res = await simplifyText(combinedText, 'beginner');
       setSimplifiedText(res.text);
-      consumeToken();
     } catch (err) {
       console.error(err);
       Alert.alert('Error', 'Failed to simplify text.');
@@ -251,7 +245,7 @@ export default function ReaderScreen() {
           >
             <Feather name="zap" size={16} color={book.coverColor} />
             <Text style={[styles.simplifyBtnText, { color: book.coverColor }]}>
-              {isSimplifying ? 'Simplifying...' : 'Simplify Section (Cost: 1 Token)'}
+              {isSimplifying ? 'Simplifying...' : 'Simplify Section'}
             </Text>
           </TouchableOpacity>
         )}

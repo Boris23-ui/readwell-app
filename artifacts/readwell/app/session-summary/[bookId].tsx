@@ -17,7 +17,6 @@ import { useApp } from '@/context/CloudAppContext';
 import { useCoach } from '@/context/CoachContext';
 import { BadgeItem } from '@/components/BadgeItem';
 import { BadgeKey, BADGE_INFO } from '@/types';
-import { calculateEloGain } from '@/utils/xp';
 
 export default function SessionSummaryScreen() {
   const coach = useCoach();
@@ -53,13 +52,13 @@ export default function SessionSummaryScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, updateBook, completeSession, profile, addTokens } = useApp();
+  const { getBookById, updateBook, completeSession, profile } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [newBadges, setNewBadges] = useState<BadgeKey[]>([]);
   const [sessionSaved, setSessionSaved] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
-  const [earnedToken, setEarnedToken] = useState(false);
+
 
   const xpAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -85,7 +84,6 @@ export default function SessionSummaryScreen() {
 
       const comprehensionScore = total > 0 ? Math.round((score / Math.max(total - 1, 1)) * 100) : 0;
       const isPerfectQuiz = !wasSkipped && total > 1 && score === total - 1;
-      const eloEarned = calculateEloGain(comprehensionScore, complexityIndex);
 
       const result = await completeSession({
         bookId: book.id,
@@ -94,13 +92,9 @@ export default function SessionSummaryScreen() {
         segmentsCompleted: 1,
         comprehensionScore,
         xpEarned,
-        eloEarned,
       }, { bookFinished: isLastSegment, isPerfectQuiz });
 
-      if (isPerfectQuiz) {
-        addTokens(1);
-        setEarnedToken(true);
-      }
+
 
       setNewBadges(result.newBadges);
       if (result.newBadges.length > 0 || profile.streakCurrent > 0) {
@@ -150,7 +144,6 @@ export default function SessionSummaryScreen() {
 
   const minutesRead = Math.floor(secondsRead / 60);
   const comprScore = total > 1 ? Math.round((score / (total - 1)) * 100) : (wasSkipped ? 0 : 100);
-  const eloEarnedDisplay = calculateEloGain(comprScore, complexityIndex);
   const isBookFinished = segmentIndex + 1 >= book.segments.length;
   const nextSegmentIndex = segmentIndex + 1;
 
@@ -226,15 +219,7 @@ export default function SessionSummaryScreen() {
             </View>
           )}
 
-          {!wasSkipped && (
-            <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.honey}55`, shadowColor: colors.shadow }]}>
-              <Feather name="trending-up" size={18} color={colors.honeyDeep} />
-              <Animated.Text style={[styles.statVal, { color: colors.honeyDeep }]}>
-                +{eloEarnedDisplay}
-              </Animated.Text>
-              <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>ELO</Text>
-            </View>
-          )}
+
 
           <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.sage}55`, shadowColor: colors.shadow }]}>
             <Feather name="zap" size={18} color={colors.sageDeep} />
@@ -244,13 +229,7 @@ export default function SessionSummaryScreen() {
             <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>XP</Text>
           </View>
           
-          {earnedToken && (
-            <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.honey}55`, shadowColor: colors.shadow }]}>
-              <Feather name="plus-circle" size={18} color={colors.honeyDeep} />
-              <Animated.Text style={[styles.statVal, { color: colors.honeyDeep }]}>+1</Animated.Text>
-              <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>TOKEN</Text>
-            </View>
-          )}
+
         </View>
 
         {/* New badges — felt card */}

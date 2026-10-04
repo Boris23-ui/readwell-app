@@ -22,7 +22,7 @@ const LEVEL_OPTIONS: Array<'beginner' | 'intermediate' | 'advanced'> = ['beginne
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { profile, updateProfile, addTokens } = useApp();
+  const { profile, updateProfile } = useApp();
   const { user, isGuest, signOut } = useAuth();
   const [showGoalPicker, setShowGoalPicker] = useState(false);
   const [showLevelPicker, setShowLevelPicker] = useState(false);
@@ -106,11 +106,7 @@ export default function ProfileScreen() {
           <Text style={[styles.statNum, { color: colors.sageDeep }]}>{profile.totalBooksFinished}</Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>FINISHED</Text>
         </View>
-        <View style={[styles.vDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statNum, { color: colors.honeyDeep }]}>{profile.tokens}</Text>
-          <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>TOKENS</Text>
-        </View>
+
       </Animated.View>
 
       {/* Settings */}
@@ -222,25 +218,7 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        <View style={[styles.separator, { backgroundColor: colors.border }]} />
 
-        {/* Mock Refill Tokens */}
-        <TouchableOpacity
-          style={styles.settingRow}
-          onPress={() => addTokens(10)}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.settingIcon, { backgroundColor: `${colors.honeyDeep}15` }]}>
-            <Feather name="plus-circle" size={18} color={colors.honeyDeep} />
-          </View>
-          <View style={styles.settingLabel}>
-            <Text style={[styles.settingTitle, { color: colors.foreground }]}>Refill Tokens (Mock)</Text>
-            <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>
-              Add 10 tokens for testing
-            </Text>
-          </View>
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
 
         <View style={[styles.separator, { backgroundColor: colors.border }]} />
 

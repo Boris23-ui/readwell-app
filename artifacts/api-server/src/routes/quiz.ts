@@ -67,83 +67,28 @@ function getSafeErrorSummary(error: unknown): string {
 }
 
 
-function generateFallbackQuiz(passage: string): GenerateQuizResponse {
-  const sentences = passage.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 15);
-  const s1 = sentences[0] || "The subject described in the reading passage";
-  const s2 = sentences[1] || "The primary details established in the text";
-  const s3 = sentences[2] || sentences[0] || "The overarching theme of the section";
-  const words = passage.split(/\s+/).filter(w => w.length > 5);
-  const sampleWord = words[Math.floor(words.length / 2)] || "concept";
+function normalizeText(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
 
-  return {
-    questions: [
-      {
-        type: "recall",
-        prompt: `Based on the passage, which statement accurately reflects what is described in the text?`,
-        options: [
-          s1.slice(0, 60),
-          "It occurred in an entirely different context.",
-          "The author explicitly stated the opposite was true.",
-          "No significant outcomes were observed."
-        ],
-        correctIndex: 0,
-        evidenceQuote: s1.slice(0, 80),
-        isOpenEnded: false
-      },
-      {
-        type: "recall",
-        prompt: `What specific detail is highlighted in this reading section?`,
-        options: [
-          "It was considered negligible.",
-          s2.slice(0, 60),
-          "It was replaced by a subsequent finding.",
-          "None of the other options."
-        ],
-        correctIndex: 1,
-        evidenceQuote: s2.slice(0, 80),
-        isOpenEnded: false
-      },
-      {
-        type: "vocabulary",
-        prompt: `In the context of the reading, what does "${sampleWord}" most closely mean?`,
-        options: [
-          `The key concept or principle in this context`,
-          "A completely contradictory term",
-          "An irrelevant or disconnected term",
-          "An obsolete historical reference"
-        ],
-        correctIndex: 0,
-        evidenceQuote: `Referenced in the passage text`,
-        isOpenEnded: false
-      },
-      {
-        type: "inference",
-        prompt: `What can reasonably be inferred from the author's statements in this passage?`,
-        options: [
-          "The subject requires no further understanding.",
-          "The points lack any substantial basis.",
-          s3.slice(0, 60),
-          "The situation resolved itself without action."
-        ],
-        correctIndex: 2,
-        evidenceQuote: s3.slice(0, 80),
-        isOpenEnded: false
-      },
-      {
-        type: "reflection",
-        prompt: `How does the core concept in this passage connect with your own reading goals or perspectives?`,
-        isOpenEnded: true
+function verifyEvidence(quiz: GenerateQuizResponse, passage: string): boolean {
+  const normalizedPassage = normalizeText(passage);
+  for (const q of quiz.questions) {
+    if (!q.isOpenEnded && q.evidenceQuote) {
+      const normalizedQuote = normalizeText(q.evidenceQuote);
+      if (normalizedQuote.length > 0 && !normalizedPassage.includes(normalizedQuote)) {
+        return false;
       }
-    ],
-    complexityIndex: 2.5
-  };
+    }
+  }
+  return true;
 }
 
 router.post("/quiz/generate", async (req, res) => {
   const body = req.body as {
     segmentText?: unknown;
     readingLevel?: unknown;
-    elo?: unknown;
+    comprehensionScore?: unknown;
     secondsRead?: unknown;
     wordCount?: unknown;
     complexity?: unknown;
@@ -186,7 +131,7 @@ router.post("/quiz/generate", async (req, res) => {
 
   // Heuristic comprehension eval — zero token cost (previously was an API call)
   const mlInsight = evaluateComprehension({
-    elo: typeof body.elo === 'number' ? body.elo : 100,
+    comprehensionScore: typeof body.comprehensionScore === 'number' ? body.comprehensionScore : 0,
     secondsRead: typeof body.secondsRead === 'number' ? body.secondsRead : 60,
     wordCount: typeof body.wordCount === 'number' ? body.wordCount : 200,
     complexity: typeof body.complexity === 'number' ? body.complexity : 2.5,
@@ -212,6 +157,7 @@ RULES — all must be followed:
 - Q5 (type: "reflection"): open-ended reflection; omit options, correctIndex, evidenceQuote entirely.
 - All options must be plausible — no obviously silly distractors.
 - evidenceQuote: exact text from passage, ≤25 words.
+- explanation: 1-2 sentences explaining why the correct answer is correct, in an encouraging coaching tone.
 - correctIndex: 0-3 (index of the correct option).
 - Questions must be specific to THIS passage — not generic comprehension questions.`;
 
@@ -225,7 +171,7 @@ PASSAGE:
 ${truncated}`;
 
   try {
-    const result = await aiGateway.generate({
+    let result = await aiGateway.generate({
       purpose: 'quiz',
       priority: 'critical',
       cacheKey: `quiz:${passageHash}`,
@@ -233,11 +179,27 @@ ${truncated}`;
       prompt,
       systemInstruction,
       maxOutputTokens: 1000,
-      fallbackFn: () => JSON.stringify(generateFallbackQuiz(passage)),
     });
 
-    // Parse and validate the quiz response
-    const parsed = parseQuizResponse(result.text);
+    let parsed = parseQuizResponse(result.text);
+
+    if (!verifyEvidence(parsed, passage)) {
+      logger.warn({ passageHash }, "Evidence check failed; regenerating quiz once");
+      result = await aiGateway.generate({
+        purpose: 'quiz',
+        priority: 'critical',
+        cacheKey: `quiz:${passageHash}:retry`,
+        cacheTtlMs: 60 * 60 * 1000,
+        prompt,
+        systemInstruction,
+        maxOutputTokens: 1000,
+      });
+      parsed = parseQuizResponse(result.text);
+      if (!verifyEvidence(parsed, passage)) {
+        throw new Error("Generated quiz contained invalid evidence quotes");
+      }
+    }
+
     res.json(parsed);
   } catch (err) {
     const errorName = err instanceof Error ? err.name : "UnknownError";
@@ -248,12 +210,59 @@ ${truncated}`;
         formatError: err instanceof QuizFormatError,
         errorSummary,
       },
-      "Quiz generation failed; providing smart structured fallback quiz",
+      "Quiz generation failed",
     );
 
-    // Resilient fallback: ensure user reading progress and habit is never blocked
-    const fallbackQuiz = generateFallbackQuiz(passage);
-    res.json(fallbackQuiz);
+    res.status(500).json({
+      error: "We couldn't build a good check for this section",
+      code: "QUIZ_GENERATION_FAILED",
+    });
+  }
+});
+
+router.post("/quiz/reflection", async (req, res) => {
+  const { answer, questionPrompt, segmentText } = req.body;
+
+  if (typeof answer !== "string" || !answer.trim()) {
+    res.status(400).json({ error: "answer is required" });
+    return;
+  }
+
+  const systemInstruction = `You are an encouraging reading coach. Evaluate the user's reflection on the reading passage.
+Score the answer from 0 to 3 based on engagement and insight (0=nonsense/unrelated, 1=minimal/shallow, 2=good/relevant, 3=deep/insightful).
+Return JSON: { "score": number, "feedback": "One short, encouraging sentence." }`;
+
+  const prompt = `PASSAGE: ${typeof segmentText === 'string' ? segmentText.slice(0, 3000) : ''}
+QUESTION: ${questionPrompt}
+USER'S ANSWER: ${answer}`;
+
+  try {
+    const result = await aiGateway.generate({
+      purpose: 'quiz',
+      priority: 'standard',
+      prompt,
+      systemInstruction,
+      maxOutputTokens: 150,
+    });
+    
+    let parsed: any;
+    const jsonMatch = result.text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const rawJson = jsonMatch ? jsonMatch[1] : result.text;
+    const firstBrace = rawJson.indexOf("{");
+    const lastBrace = rawJson.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      parsed = JSON.parse(rawJson.slice(firstBrace, lastBrace + 1));
+    } else {
+      parsed = JSON.parse(rawJson);
+    }
+    
+    res.json({
+      score: typeof parsed.score === 'number' ? parsed.score : 2,
+      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : "Thanks for reflecting on this!"
+    });
+  } catch (err) {
+    logger.warn({ err }, "Reflection evaluation failed");
+    res.status(500).json({ error: "Failed to evaluate reflection" });
   }
 });
 

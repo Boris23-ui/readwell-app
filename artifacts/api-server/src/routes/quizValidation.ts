@@ -6,6 +6,7 @@ export interface Question {
   options?: string[];
   correctIndex?: number;
   evidenceQuote?: string;
+  explanation?: string;
   isOpenEnded: boolean;
 }
 
@@ -109,6 +110,7 @@ export function parseQuizResponse(raw: string): GenerateQuizResponse {
     const options = candidate.options;
     const correctIndex = candidate.correctIndex;
     const evidenceQuote = candidate.evidenceQuote;
+    const explanation = candidate.explanation;
 
     if (
       !Array.isArray(options) ||
@@ -129,6 +131,9 @@ export function parseQuizResponse(raw: string): GenerateQuizResponse {
     if (!isNonEmptyString(evidenceQuote)) {
       throw new QuizFormatError(`Question ${index + 1} did not include evidence`);
     }
+    if (!isNonEmptyString(explanation)) {
+      throw new QuizFormatError(`Question ${index + 1} did not include an explanation`);
+    }
 
     return {
       type: EXPECTED_TYPES[index],
@@ -136,6 +141,7 @@ export function parseQuizResponse(raw: string): GenerateQuizResponse {
       options: options.map((option) => option.trim()),
       correctIndex,
       evidenceQuote: evidenceQuote.trim(),
+      explanation: explanation.trim(),
       isOpenEnded: false,
     };
   });

@@ -19,9 +19,7 @@ export default function Index() {
     return <Redirect href="/onboarding" />;
   }
 
-  if (profile.role === 'sponsor') {
-    return <Redirect href="/(sponsor-tabs)" />;
-  }
+
 
   return <Redirect href="/(tabs)" />;
 }

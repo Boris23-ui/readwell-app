@@ -5,7 +5,7 @@ import extractRouter from "./extract";
 import pdfRouter from "./pdf";
 import storageRouter from "./storage";
 import simplifyRouter from "./simplify";
-import recommendationsRouter from "./recommendations";
+
 import coachRouter from "./coach";
 import adminRouter from "./admin";
 
@@ -17,7 +17,7 @@ router.use(extractRouter);
 router.use(pdfRouter);
 router.use(storageRouter);
 router.use(simplifyRouter);
-router.use(recommendationsRouter);
+
 router.use(coachRouter);
 router.use(adminRouter);
 

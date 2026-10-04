@@ -57,7 +57,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [showEmailForm, setShowEmailForm] = useState(false);
-  const [role, setRole] = useState<'learner' | 'sponsor'>('learner');
   const [isAppleLoading, setIsAppleLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isEmailLoading, setIsEmailLoading] = useState(false);
@@ -68,7 +67,7 @@ export default function LoginScreen() {
   const handleAppleAuth = async () => {
     setIsAppleLoading(true);
     try {
-      await signInWithApple(role);
+      await signInWithApple();
       router.replace('/');
     } catch (error: any) {
       console.error('Apple Auth Error:', error);
@@ -81,7 +80,7 @@ export default function LoginScreen() {
   const handleGoogleAuth = async () => {
     setIsGoogleLoading(true);
     try {
-      await signInWithGoogle(role);
+      await signInWithGoogle();
       router.replace('/');
     } catch (error: any) {
       console.error('Google Auth Error:', error);
@@ -102,7 +101,7 @@ export default function LoginScreen() {
       if (isLogin) {
         await signIn(email.trim(), password);
       } else {
-        await signUp(email.trim(), password, role);
+        await signUp(email.trim(), password);
       }
       router.replace('/');
     } catch (error: any) {
@@ -157,54 +156,6 @@ export default function LoginScreen() {
             </Text>
           </View>
 
-          {/* Role Picker */}
-          <View style={styles.roleContainer}>
-            <Text style={[styles.roleLabel, { color: colors.mutedForeground }]}>I am signing in as:</Text>
-            <View style={[styles.roleButtons, { backgroundColor: colors.background }]}>
-              <TouchableOpacity
-                style={[styles.roleOption, role === 'learner' && { backgroundColor: colors.primary }]}
-                onPress={() => setRole('learner')}
-                activeOpacity={0.8}
-              >
-                <Feather
-                  name="book"
-                  size={14}
-                  color={role === 'learner' ? '#FFF' : colors.mutedForeground}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={[
-                    styles.roleOptionText,
-                    { color: role === 'learner' ? '#FFF' : colors.mutedForeground },
-                    role === 'learner' && styles.roleOptionTextActive,
-                  ]}
-                >
-                  Learner
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.roleOption, role === 'sponsor' && { backgroundColor: colors.primary }]}
-                onPress={() => setRole('sponsor')}
-                activeOpacity={0.8}
-              >
-                <Feather
-                  name="users"
-                  size={14}
-                  color={role === 'sponsor' ? '#FFF' : colors.mutedForeground}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={[
-                    styles.roleOptionText,
-                    { color: role === 'sponsor' ? '#FFF' : colors.mutedForeground },
-                    role === 'sponsor' && styles.roleOptionTextActive,
-                  ]}
-                >
-                  Parent / Sponsor
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
 
           {/* Social Auth Suite: Apple & Google */}
           <View style={styles.socialButtonsContainer}>
@@ -407,37 +358,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 8,
   },
-  roleContainer: {
-    marginBottom: 20,
-  },
-  roleLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
-    marginBottom: 8,
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  roleButtons: {
-    flexDirection: 'row',
-    borderRadius: 14,
-    padding: 4,
-  },
-  roleOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  roleOptionText: {
-    fontSize: 13,
-    fontFamily: 'Inter_500Medium',
-  },
-  roleOptionTextActive: {
-    fontFamily: 'Inter_600SemiBold',
-  },
+
   socialButtonsContainer: {
     gap: 10,
   },

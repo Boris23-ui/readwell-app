@@ -53,7 +53,7 @@ class LRUCache {
 
 // ── AI Gateway ───────────────────────────────────────────────────────────────
 
-export type AIPurpose = 'quiz' | 'simplify' | 'comprehension' | 'recommendation' | 'coach';
+export type AIPurpose = 'quiz' | 'simplify' | 'comprehension' | 'coach';
 
 export interface AIRequest {
   purpose: AIPurpose;
@@ -90,7 +90,7 @@ const DEFAULT_TTL: Record<AIPurpose, number> = {
   quiz: 60 * 60 * 1000,           // 1 hour
   simplify: 24 * 60 * 60 * 1000,  // 24 hours
   comprehension: 0,                // no caching (replaced by heuristic)
-  recommendation: 24 * 60 * 60 * 1000, // 24 hours
+
   coach: 0,                        // never cache chat responses
 };
 

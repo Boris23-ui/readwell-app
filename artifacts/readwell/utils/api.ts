@@ -1,4 +1,15 @@
+import { supabase } from './supabase';
+
 export type UploadFile = File | { uri: string; name: string; type: string };
+
+const getAuthHeaders = async (headers: Record<string, string> = {}) => {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+  return {
+    ...headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+};
 
 function appendFile(formData: FormData, fieldName: string, file: UploadFile) {
   if ('uri' in file) {
@@ -195,7 +206,7 @@ export async function deletePdfPages(bookId: string): Promise<void> {
 export async function generateQuiz(
   segmentText: string,
   readingLevel: string,
-  elo?: number,
+  comprehensionScore?: number,
   secondsRead?: number,
   wordCount?: number,
   complexity?: number
@@ -203,13 +214,29 @@ export async function generateQuiz(
   const response = await fetch(`${getBaseUrl()}/api/quiz/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ segmentText, readingLevel, elo, secondsRead, wordCount, complexity }),
+    body: JSON.stringify({ segmentText, readingLevel, comprehensionScore, secondsRead, wordCount, complexity }),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const error = new Error((err as any).error ?? 'Failed to generate quiz') as Error & { code?: string };
     error.code = (err as any).code;
     throw error;
+  }
+  return response.json();
+}
+
+export async function evaluateReflection(
+  answer: string,
+  questionPrompt: string,
+  segmentText: string
+): Promise<{ score: number; feedback: string }> {
+  const response = await fetch(`${getBaseUrl()}/api/quiz/reflection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answer, questionPrompt, segmentText }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to evaluate reflection');
   }
   return response.json();
 }
@@ -232,27 +259,6 @@ export async function simplifyText(
   return response.json();
 }
 
-export interface RecommendationRequest {
-  elo?: number;
-  readingLevel?: string;
-  interests?: string[];
-  recentTopics?: string[];
-}
-
-export async function fetchRecommendations(params: RecommendationRequest) {
-  const response = await fetch(`${getBaseUrl()}/api/recommendations/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    const error = new Error((err as any).error ?? 'Failed to fetch recommendations') as Error & { code?: string };
-    error.code = (err as any).code;
-    throw error;
-  }
-  return response.json();
-}
 
 // ── ReadWell Coach Agent Client API ──────────────────────────────────────────
 
@@ -280,7 +286,7 @@ export interface CoachChatResult {
 export async function chatWithCoach(payload: CoachChatPayload): Promise<CoachChatResult> {
   const response = await fetch(`${getBaseUrl()}/api/coach/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -293,7 +299,9 @@ export async function chatWithCoach(payload: CoachChatPayload): Promise<CoachCha
 }
 
 export async function fetchCoachProfile(userId: string) {
-  const response = await fetch(`${getBaseUrl()}/api/coach/profile/${encodeURIComponent(userId)}`);
+  const response = await fetch(`${getBaseUrl()}/api/coach/profile/${encodeURIComponent(userId)}`, {
+    headers: await getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Failed to fetch coach profile');
   return response.json();
 }
@@ -301,7 +309,7 @@ export async function fetchCoachProfile(userId: string) {
 export async function updateCoachProfile(userId: string, updates: any) {
   const response = await fetch(`${getBaseUrl()}/api/coach/profile/${encodeURIComponent(userId)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(updates),
   });
   if (!response.ok) throw new Error('Failed to update coach profile');
@@ -309,13 +317,17 @@ export async function updateCoachProfile(userId: string, updates: any) {
 }
 
 export async function fetchCoachStrategy(userId: string) {
-  const response = await fetch(`${getBaseUrl()}/api/coach/strategy/${encodeURIComponent(userId)}`);
+  const response = await fetch(`${getBaseUrl()}/api/coach/strategy/${encodeURIComponent(userId)}`, {
+    headers: await getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Failed to fetch coach strategy');
   return response.json();
 }
 
 export async function fetchCoachEvolution(userId: string) {
-  const response = await fetch(`${getBaseUrl()}/api/coach/evolution/${encodeURIComponent(userId)}`);
+  const response = await fetch(`${getBaseUrl()}/api/coach/evolution/${encodeURIComponent(userId)}`, {
+    headers: await getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Failed to fetch evolution history');
   return response.json();
 }
@@ -323,7 +335,7 @@ export async function fetchCoachEvolution(userId: string) {
 export async function triggerCoachEvolution(userId: string, reason?: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/trigger-evolution/${encodeURIComponent(userId)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ reason }),
   });
   if (!response.ok) throw new Error('Failed to trigger coach evolution');
@@ -331,13 +343,17 @@ export async function triggerCoachEvolution(userId: string, reason?: string) {
 }
 
 export async function fetchCoachDigest(userId: string) {
-  const response = await fetch(`${getBaseUrl()}/api/coach/digest/${encodeURIComponent(userId)}`);
+  const response = await fetch(`${getBaseUrl()}/api/coach/digest/${encodeURIComponent(userId)}`, {
+    headers: await getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Failed to fetch coach digest');
   return response.json();
 }
 
 export async function fetchCoachFlashcards(userId: string) {
-  const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}`);
+  const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}`, {
+    headers: await getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Failed to fetch flashcards');
   return response.json();
 }
@@ -345,7 +361,7 @@ export async function fetchCoachFlashcards(userId: string) {
 export async function createCoachFlashcard(userId: string, card: any) {
   const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}/create`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(card),
   });
   if (!response.ok) throw new Error('Failed to create flashcard');
@@ -355,7 +371,7 @@ export async function createCoachFlashcard(userId: string, card: any) {
 export async function reviewCoachFlashcard(userId: string, cardId: string, quality: number, cardFront?: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}/review`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ cardId, quality, cardFront }),
   });
   if (!response.ok) throw new Error('Failed to review flashcard');
@@ -365,7 +381,7 @@ export async function reviewCoachFlashcard(userId: string, cardId: string, quali
 export async function calculateCoachReadingPlan(totalUnits: number, availableMinutes: number, targetDays: number) {
   const response = await fetch(`${getBaseUrl()}/api/coach/plan/calculate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ totalUnits, availableMinutes, targetDays }),
   });
   if (!response.ok) throw new Error('Failed to calculate reading plan');
@@ -381,7 +397,7 @@ export async function createCoachReadingPlan(payload: {
 }) {
   const response = await fetch(`${getBaseUrl()}/api/coach/plan/create`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error('Failed to create reading plan');
@@ -389,7 +405,9 @@ export async function createCoachReadingPlan(payload: {
 }
 
 export async function searchCoachBooks(query: string, maxResults = 5) {
-  const response = await fetch(`${getBaseUrl()}/api/coach/books/search?q=${encodeURIComponent(query)}&maxResults=${maxResults}`);
+  const response = await fetch(`${getBaseUrl()}/api/coach/books/search?q=${encodeURIComponent(query)}&maxResults=${maxResults}`, {
+    headers: await getAuthHeaders()
+  });
   if (!response.ok) throw new Error('Failed to search books');
   return response.json();
 }

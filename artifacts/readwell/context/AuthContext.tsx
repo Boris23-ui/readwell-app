@@ -18,7 +18,6 @@ export interface AuthUser {
   email: string | null;
   displayName?: string | null;
   photoUrl?: string | null;
-  role?: 'learner' | 'sponsor';
   provider?: 'google' | 'apple' | 'password' | 'guest';
 }
 
@@ -27,10 +26,10 @@ interface AuthContextType {
   loading: boolean;
   isGuest: boolean;
   continueAsGuest: () => Promise<void>;
-  signInWithGoogle: (role?: 'learner' | 'sponsor') => Promise<void>;
-  signInWithApple: (role?: 'learner' | 'sponsor') => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, role?: 'learner' | 'sponsor') => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   devBypassLogin: () => Promise<void>;
 }
@@ -55,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
-  const extractAuthUser = (supabaseUser: any, defaultRole: 'learner' | 'sponsor' = 'learner'): AuthUser => {
+  const extractAuthUser = (supabaseUser: any): AuthUser => {
     const meta = supabaseUser.user_metadata || {};
     const appMeta = supabaseUser.app_metadata || {};
     const isGoogle = appMeta.provider === 'google' || meta.iss?.includes('google');
@@ -71,7 +70,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: supabaseUser.email ?? null,
       displayName: meta.full_name || meta.name || meta.display_name || supabaseUser.email?.split('@')[0] || 'Reader',
       photoUrl: meta.avatar_url || meta.picture || null,
-      role: meta.role || defaultRole,
       provider,
     };
   };
@@ -150,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsGuest(true);
   };
 
-  const signInWithGoogle = async (role: 'learner' | 'sponsor' = 'learner') => {
+  const signInWithGoogle = async () => {
     if (isSupabaseConfigured()) {
       if (Platform.OS === 'web') {
         const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
@@ -206,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
             if (sessionErr) throw sessionErr;
             if (sessionData.user) {
-              const googleUser = extractAuthUser(sessionData.user, role);
+              const googleUser = extractAuthUser(sessionData.user);
               setUser(googleUser);
               setIsGuest(false);
               await AsyncStorage.removeItem(GUEST_MODE_KEY);
@@ -223,7 +221,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: 'reader.google@gmail.com',
         displayName: 'Google Reader',
         photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-        role,
         provider: 'google',
       };
       await AsyncStorage.setItem(LOCAL_USER_KEY, JSON.stringify(demoGoogleUser));
@@ -233,7 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithApple = async (role: 'learner' | 'sponsor' = 'learner') => {
+  const signInWithApple = async () => {
     if (isSupabaseConfigured()) {
       if (Platform.OS === 'web') {
         const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
@@ -285,7 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
             if (sessionErr) throw sessionErr;
             if (sessionData.user) {
-              const appleUser = extractAuthUser(sessionData.user, role);
+              const appleUser = extractAuthUser(sessionData.user);
               setUser(appleUser);
               setIsGuest(false);
               await AsyncStorage.removeItem(GUEST_MODE_KEY);
@@ -302,7 +299,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: 'reader.apple@icloud.com',
         displayName: 'Apple Reader',
         photoUrl: null,
-        role,
         provider: 'apple',
       };
       await AsyncStorage.setItem(LOCAL_USER_KEY, JSON.stringify(demoAppleUser));
@@ -327,7 +323,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: 'user_' + Math.abs(email.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)),
         email,
         displayName: email.split('@')[0],
-        role: 'learner',
         provider: 'password',
       };
       await AsyncStorage.setItem(LOCAL_USER_KEY, JSON.stringify(localUser));
@@ -336,18 +331,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signUp = async (email: string, password: string, role: 'learner' | 'sponsor' = 'learner') => {
+  const signUp = async (email: string, password: string) => {
     if (isSupabaseConfigured()) {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { role, display_name: email.split('@')[0] },
+          data: { display_name: email.split('@')[0] },
         },
       });
       if (error) throw error;
       if (data.user) {
-        setUser(extractAuthUser(data.user, role));
+        setUser(extractAuthUser(data.user));
         setIsGuest(false);
       }
     } else {
@@ -357,7 +352,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: 'user_' + Math.abs(email.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)),
         email,
         displayName: email.split('@')[0],
-        role,
         provider: 'password',
       };
       await AsyncStorage.setItem(LOCAL_USER_KEY, JSON.stringify(localUser));
@@ -382,7 +376,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       id: 'dev_admin_001',
       email: 'developer@readwell.app',
       displayName: 'Developer',
-      role: 'learner',
       provider: 'password',
     };
     await AsyncStorage.setItem(LOCAL_USER_KEY, JSON.stringify(devUser));

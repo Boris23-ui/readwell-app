@@ -1,4 +1,5 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Response } from 'express';
+import { requireAuth, type AuthenticatedRequest } from '../middlewares/auth';
 import { logger } from '../lib/logger';
 import {
   coachMemory,
@@ -17,13 +18,10 @@ import {
 
 const router = Router();
 
-function getUserId(param: unknown): string {
-  if (Array.isArray(param)) return String(param[0] || 'default_reader');
-  return String(param || 'default_reader');
-}
+// Helper removed since we use req.user.id
 
 // ── 1. Chat with the Coach ───────────────────────────────────────────────────
-router.post('/coach/chat', async (req: Request, res: Response) => {
+router.post('/coach/chat', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as {
     userId?: string;
     message?: string;
@@ -36,7 +34,7 @@ router.post('/coach/chat', async (req: Request, res: Response) => {
     };
   };
 
-  const userId = body.userId?.trim() || 'default_reader';
+  const userId = req.user!.id;
   const message = body.message?.trim();
 
   if (!message) {
@@ -61,8 +59,8 @@ router.post('/coach/chat', async (req: Request, res: Response) => {
 });
 
 // ── 2. Profile Management ────────────────────────────────────────────────────
-router.get('/coach/profile/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.get('/coach/profile/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   try {
     const profile = await coachMemory.getProfile(userId);
     res.json(profile);
@@ -72,8 +70,8 @@ router.get('/coach/profile/:userId', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/coach/profile/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.post('/coach/profile/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   const updates = req.body;
   try {
     const profile = await coachMemory.getProfile(userId);
@@ -87,8 +85,8 @@ router.post('/coach/profile/:userId', async (req: Request, res: Response) => {
 });
 
 // ── 3. Strategy Document & Evolution History ─────────────────────────────────
-router.get('/coach/strategy/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.get('/coach/strategy/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   try {
     const strategy = await coachMemory.getStrategy(userId);
     res.json(strategy);
@@ -98,8 +96,8 @@ router.get('/coach/strategy/:userId', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/coach/evolution/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.get('/coach/evolution/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   try {
     const strategy = await coachMemory.getStrategy(userId);
     const explanation = await explainCoachEvolution(userId);
@@ -119,8 +117,8 @@ router.get('/coach/evolution/:userId', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/coach/trigger-evolution/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.post('/coach/trigger-evolution/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   const reason = (req.body as any)?.reason;
   try {
     const result = await triggerStrategyEvolution(userId, reason);
@@ -137,8 +135,8 @@ router.post('/coach/trigger-evolution/:userId', async (req: Request, res: Respon
 });
 
 // ── 4. "While You Were Away" Digest ──────────────────────────────────────────
-router.get('/coach/digest/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.get('/coach/digest/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   try {
     const digestData = await generateCoachDigest(userId);
     res.json(digestData);
@@ -149,8 +147,8 @@ router.get('/coach/digest/:userId', async (req: Request, res: Response) => {
 });
 
 // ── 5. Spaced Repetition Flashcards ──────────────────────────────────────────
-router.get('/coach/flashcards/:userId', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.get('/coach/flashcards/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   try {
     const all = await coachMemory.getFlashcards(userId);
     const nowIso = new Date().toISOString();
@@ -167,8 +165,8 @@ router.get('/coach/flashcards/:userId', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/coach/flashcards/:userId/create', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.post('/coach/flashcards/:userId/create', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   const body = req.body as Partial<Flashcard>;
 
   if (!body.front || !body.back) {
@@ -199,8 +197,8 @@ router.post('/coach/flashcards/:userId/create', async (req: Request, res: Respon
   }
 });
 
-router.post('/coach/flashcards/:userId/review', async (req: Request, res: Response) => {
-  const userId = getUserId(req.params.userId);
+router.post('/coach/flashcards/:userId/review', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.id;
   const { cardId, cardFront, quality } = req.body as {
     cardId?: string;
     cardFront?: string;
@@ -235,7 +233,7 @@ router.post('/coach/flashcards/:userId/review', async (req: Request, res: Respon
 });
 
 // ── 6. Reading Plans & Pace ──────────────────────────────────────────────────
-router.post('/coach/plan/calculate', (req: Request, res: Response) => {
+router.post('/coach/plan/calculate', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   const { totalUnits, availableMinutes, targetDays } = req.body;
   const result = calculateReadingPace(
     Number(totalUnits) || 10,
@@ -245,11 +243,12 @@ router.post('/coach/plan/calculate', (req: Request, res: Response) => {
   res.json(result);
 });
 
-router.post('/coach/plan/create', async (req: Request, res: Response) => {
-  const { userId, bookTitle, totalChapters, targetDays, availableMinutes } = req.body;
+router.post('/coach/plan/create', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { bookTitle, totalChapters, targetDays, availableMinutes } = req.body;
+  const userId = req.user!.id;
   try {
     const plan = await createReadingPlan(
-      userId || 'default_reader',
+      userId,
       bookTitle || 'Untitled Book',
       Number(totalChapters) || 10,
       Number(targetDays) || 14,
@@ -263,7 +262,7 @@ router.post('/coach/plan/create', async (req: Request, res: Response) => {
 });
 
 // ── 7. Google Books Search ───────────────────────────────────────────────────
-router.get('/coach/books/search', async (req: Request, res: Response) => {
+router.get('/coach/books/search', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const q = String(req.query.q || '').trim();
   if (!q) {
     res.status(400).json({ error: 'Query q is required' });

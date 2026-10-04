@@ -37,7 +37,7 @@ function RootLayoutNav() {
       <Stack.Screen name="index" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="(sponsor-tabs)" />
+
       <Stack.Screen
         name="import"
         options={{ presentation: 'modal', headerShown: false }}

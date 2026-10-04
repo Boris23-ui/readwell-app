@@ -19,8 +19,9 @@ import { useCoach } from '@/context/CoachContext';
 import { ProgressRing } from '@/components/ProgressRing';
 import { BookCard } from '@/components/BookCard';
 import { WhileYouWereAwayCard } from '@/components/WhileYouWereAwayCard';
+import { ReviewQueueCard } from '@/components/ReviewQueueCard';
 import { getXpProgressInLevel } from '@/utils/xp';
-import { fetchRecommendations } from '@/utils/api';
+
 
 export default function HomeScreen() {
   const colors = useColors();
@@ -29,29 +30,7 @@ export default function HomeScreen() {
   const isWide = width >= 860;
   const { profile, books, getTodayActivity } = useApp();
   const { strategy, dueFlashcards } = useCoach();
-  const [recommendations, setRecommendations] = React.useState<any[]>([]);
 
-  React.useEffect(() => {
-    let mounted = true;
-    const loadRecs = async () => {
-      try {
-        const res = await fetchRecommendations({
-          elo: profile.elo ?? 100,
-          readingLevel: profile.readingLevel,
-          interests: profile.interests || [],
-        });
-        if (mounted && res.recommendations) {
-          setRecommendations(res.recommendations);
-        }
-      } catch (err) {
-        console.warn('Failed to load recommendations', err);
-      }
-    };
-    loadRecs();
-    return () => {
-      mounted = false;
-    };
-  }, [profile.xp, profile.readingLevel, profile.interests]);
 
   const todayActivity = getTodayActivity();
   const todayMinutes = todayActivity?.minutesRead ?? 0;
@@ -195,7 +174,7 @@ export default function HomeScreen() {
         </View>
       </Animated.View>
 
-      {/* Total XP / ELO */}
+      {/* Total XP */ }
       <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(260).springify()}>
         <View
           style={[
@@ -275,6 +254,15 @@ export default function HomeScreen() {
     </Animated.View>
   );
 
+  const renderReviewCard = () => (
+    <Animated.View
+      entering={FadeInDown.delay(380).springify()}
+      style={[isWide ? { paddingHorizontal: 0, marginBottom: 0 } : styles.section]}
+    >
+      <ReviewQueueCard />
+    </Animated.View>
+  );
+
   const renderSprintSection = () => (
     <View style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}>
       <View style={styles.sectionHeaderRow}>
@@ -347,108 +335,7 @@ export default function HomeScreen() {
     </View>
   );
 
-  const renderCurations = () => {
-    if (recommendations.length === 0) return null;
 
-    return (
-      <Animated.View
-        entering={FadeInDown.delay(450).springify()}
-        style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
-      >
-        <Text style={[styles.displayHeading, { color: colors.foreground }]}>
-          Recommended Curations
-        </Text>
-        <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
-          Calibrated to your reading level & ELO rating.
-        </Text>
-
-        {isWide ? (
-          <View style={{ gap: 12, marginTop: 12 }}>
-            {recommendations.slice(0, 3).map((rec, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.recFeltCard,
-                  {
-                    width: '100%',
-                    backgroundColor: colors.card,
-                    borderColor: `${colors.slate}66`,
-                    shadowColor: colors.shadow,
-                  },
-                ]}
-              >
-                <View style={styles.recTopRow}>
-                  <View style={[styles.recIconWrap, { backgroundColor: `${colors.slate}22` }]}>
-                    <Feather name="bookmark" size={16} color={colors.slateDeep} />
-                  </View>
-                  <Text style={[styles.recTopicMono, { color: colors.slateDeep }]}>
-                    {rec.topic || 'EXPLORE'}
-                  </Text>
-                </View>
-
-                <Text
-                  style={[styles.recTitleText, { color: colors.foreground }]}
-                  numberOfLines={2}
-                >
-                  {rec.title}
-                </Text>
-
-                <Text
-                  style={[styles.recReasonText, { color: colors.mutedForeground }]}
-                  numberOfLines={3}
-                >
-                  {rec.reason}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 14, paddingTop: 12, paddingBottom: 6 }}
-          >
-            {recommendations.map((rec, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.recFeltCard,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: `${colors.slate}66`,
-                    shadowColor: colors.shadow,
-                  },
-                ]}
-              >
-                <View style={styles.recTopRow}>
-                  <View style={[styles.recIconWrap, { backgroundColor: `${colors.slate}22` }]}>
-                    <Feather name="bookmark" size={16} color={colors.slateDeep} />
-                  </View>
-                  <Text style={[styles.recTopicMono, { color: colors.slateDeep }]}>
-                    {rec.topic || 'EXPLORE'}
-                  </Text>
-                </View>
-
-                <Text
-                  style={[styles.recTitleText, { color: colors.foreground }]}
-                  numberOfLines={2}
-                >
-                  {rec.title}
-                </Text>
-
-                <Text
-                  style={[styles.recReasonText, { color: colors.mutedForeground }]}
-                  numberOfLines={3}
-                >
-                  {rec.reason}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-        )}
-      </Animated.View>
-    );
-  };
 
   return (
     <ScrollView
@@ -472,21 +359,7 @@ export default function HomeScreen() {
             <Text style={styles.tabBadgeActiveTitle}>THE FLOOR</Text>
             <Text style={styles.tabBadgeActiveSub}>Season 1 · active sprints</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/(tabs)/leaderboard');
-            }}
-            style={styles.tabBadgeInactive}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabBadgeInactiveTitle, { color: colors.mutedForeground }]}>
-              MARATHON
-            </Text>
-            <Text style={[styles.tabBadgeInactiveSub, { color: colors.mutedForeground }]}>
-              Season 2 · ladder
-            </Text>
-          </TouchableOpacity>
+
         </View>
 
         <View style={styles.quickPillsRow}>
@@ -535,7 +408,7 @@ export default function HomeScreen() {
           <View style={styles.dashboardRightCol}>
             {renderStatsRow()}
             {renderCoachBanner()}
-            {renderCurations()}
+            {renderReviewCard()}
           </View>
         </View>
       ) : (
@@ -545,8 +418,9 @@ export default function HomeScreen() {
           <WhileYouWereAwayCard onOpenCoach={() => router.push('/(tabs)/messages')} />
           {renderStatsRow()}
           {renderCoachBanner()}
+          {renderReviewCard()}
           {renderSprintSection()}
-          {renderCurations()}
+
         </>
       )}
 

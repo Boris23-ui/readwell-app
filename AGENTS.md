@@ -10,22 +10,16 @@ ReadWell helps readers build consistent reading habits through AI-generated comp
 
 **Frontend:** Expo 54 mobile app with React Native, Expo Router, TypeScript
 **Backend:** Express 5 API server in TypeScript
-**Database:** PostgreSQL with Drizzle ORM
+**Database:** Supabase (Auth + Postgres), called directly from the app with AsyncStorage fallback
 **AI:** Google Gemini API (server-side only)
 **Storage:** Replit Object Storage for PDFs and rendered page images
 **Workspace:** pnpm monorepo with shared libraries
 
 ```text
 artifacts/
-├── api-server/       Express API (PDF extraction, rendering, quizzes)
+├── api-server/       Express API (PDF extraction, rendering, quizzes, coach)
 ├── readwell/         Expo mobile app
 └── mockup-sandbox/   Component preview
-
-lib/
-├── api-client-react/ Generated React API hooks
-├── api-spec/         OpenAPI source
-├── api-zod/          Shared validation schemas
-└── db/               Database schema & helpers
 ```
 
 ## Critical rules
