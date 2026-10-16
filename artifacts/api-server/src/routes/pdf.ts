@@ -98,12 +98,67 @@ export function resetOrphanCleanupTimestamp(): void {
  * is flagged while a lightly-scanned page with a paragraph or two is not.
  */
 const LOW_CONFIDENCE_WORD_THRESHOLD = 20;
+const MIN_UNIQUE_WORDS_THRESHOLD = 6;
+const MIN_LETTER_RATIO_THRESHOLD = 0.50;
+const MAX_SINGLE_CHAR_RATIO = 0.40;
+
+/**
+ * Checks if a token looks like a readable, legitimate word rather than
+ * gibberish OCR artifacts from a blurry or noisy scan.
+ */
+function isLegibleWord(token: string): boolean {
+  // Strip common leading/trailing punctuation (e.g. quotes, brackets, periods)
+  const clean = token.replace(/^[^\w]+|[^\w]+$/g, '');
+  
+  // Must have at least 2 alphabetic characters
+  const letters = clean.match(/[a-zA-Z]/g);
+  if (!letters || letters.length < 2) return false;
+
+  // Must contain at least one vowel (a, e, i, o, u, y) — legitimate words have vowels
+  if (!/[aeiouy]/i.test(clean)) return false;
+
+  // Must not contain 5 or more consecutive consonants (impossible in natural words, common in OCR blur noise)
+  if (/[bcdfghjklmnpqrstvwxz]{5,}/i.test(clean)) return false;
+
+  // Must not repeat the same character 4 or more times consecutively
+  if (/(.)\1{3,}/i.test(clean)) return false;
+
+  return true;
+}
 
 export function computePageConfidence(sanitisedText: string): boolean {
-  const wordCount = sanitisedText
-    .split(/\s+/)
-    .filter(w => /[a-z]{2,}/i.test(w)).length;
-  return wordCount < LOW_CONFIDENCE_WORD_THRESHOLD;
+  const trimmed = sanitisedText.trim();
+  if (trimmed.length === 0) return true;
+
+  const rawTokens = trimmed.split(/\s+/).filter(Boolean);
+  if (rawTokens.length === 0) return true;
+
+  // 1. Check symbol-to-letter ratio: in real readable text, letters make up >= 50% of non-whitespace characters
+  const nonWhitespaceChars = trimmed.replace(/\s+/g, '');
+  const letterCount = (trimmed.match(/[a-zA-Z]/g) || []).length;
+  if (nonWhitespaceChars.length > 0 && (letterCount / nonWhitespaceChars.length) < MIN_LETTER_RATIO_THRESHOLD) {
+    return true; // Too much punctuation/symbol noise (blurry scan artifacts)
+  }
+
+  // 2. Filter for legible words
+  const legibleWords = rawTokens.filter(isLegibleWord);
+  if (legibleWords.length < LOW_CONFIDENCE_WORD_THRESHOLD) {
+    return true; // Not enough recognizable words
+  }
+
+  // 3. Check vocabulary richness: guard against OCR hallucination loops (e.g. "echo echo echo...")
+  const uniqueWords = new Set(legibleWords.map(w => w.toLowerCase()));
+  if (uniqueWords.size < MIN_UNIQUE_WORDS_THRESHOLD) {
+    return true; // Repetitive pattern/hallucination loop
+  }
+
+  // 4. Check fragmented token ratio: if > 40% of tokens are 1-char fragments, text is too broken
+  const singleCharTokens = rawTokens.filter(t => t.length === 1);
+  if (rawTokens.length >= 10 && (singleCharTokens.length / rawTokens.length) > MAX_SINGLE_CHAR_RATIO) {
+    return true; // Fragmented blur
+  }
+
+  return false;
 }
 
 const upload = multer({

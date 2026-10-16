@@ -1,6 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { UserProfile, Book, ReadingSession, DailyActivity } from '@/types';
+import {
+  parseStoredJson,
+  isArray,
+  isPlainObject,
+  sanitizeBook,
+  sanitizeSession,
+  sanitizeDailyActivity,
+  sanitizeProfile,
+  salvageJsonObjects,
+} from './safeStorage';
 
 // Local storage fallback keys
 const KEYS = {
@@ -12,13 +22,36 @@ const KEYS = {
   MESSAGES: '@readwell/messages-',
 };
 
+/**
+ * Read and validate a locally stored JSON value. If the stored value is
+ * corrupt, preserve it under `<key>.corrupt` for recovery and return the
+ * fallback so the app keeps working.
+ */
+async function readLocal<T>(
+  key: string,
+  fallback: T,
+  isValid: (v: unknown) => boolean,
+): Promise<T> {
+  const raw = await AsyncStorage.getItem(key);
+  const { value, corrupt } = parseStoredJson<T>(raw, fallback, isValid);
+  if (corrupt && raw) {
+    console.warn(`Corrupt local data for ${key}; using fallback.`);
+    try {
+      await AsyncStorage.setItem(`${key}.corrupt`, raw);
+    } catch (err) {
+      console.warn(`Could not back up corrupt data for ${key}:`, err);
+    }
+  }
+  return value;
+}
+
 // ----------------------------------------------------------------------------
 // USERS & PROFILES
 // ----------------------------------------------------------------------------
 
 export async function getProfileFromDb(userId: string, defaultProfile: UserProfile): Promise<UserProfile> {
-  const localRaw = await AsyncStorage.getItem(KEYS.PROFILE);
-  const localProfile: UserProfile = localRaw ? JSON.parse(localRaw) : defaultProfile;
+  const rawProfile: UserProfile = await readLocal<UserProfile>(KEYS.PROFILE, defaultProfile, isPlainObject);
+  const localProfile: UserProfile = sanitizeProfile(rawProfile, defaultProfile);
 
   if (isSupabaseConfigured()) {
     try {
@@ -97,8 +130,31 @@ export async function saveProfileToDb(userId: string, profile: UserProfile): Pro
 // ----------------------------------------------------------------------------
 
 export async function getBooksFromDb(userId: string): Promise<Book[]> {
-  const localRaw = await AsyncStorage.getItem(KEYS.BOOKS);
-  const localBooks: Book[] = localRaw ? JSON.parse(localRaw) : [];
+  let localBooks: Book[] = await readLocal<Book[]>(KEYS.BOOKS, [], isArray);
+
+  // If localBooks is empty, check if there is a .corrupt backup to salvage
+  if (localBooks.length === 0) {
+    try {
+      const corruptRaw = await AsyncStorage.getItem(`${KEYS.BOOKS}.corrupt`);
+      if (corruptRaw) {
+        const salvaged = salvageJsonObjects(corruptRaw, (item): item is Book => Boolean(sanitizeBook(item)));
+        if (salvaged.length > 0) {
+          localBooks = salvaged.map(sanitizeBook).filter((b): b is Book => b !== null);
+          console.info(`Recovered ${localBooks.length} book(s) from corrupt storage backup.`);
+          await AsyncStorage.setItem(KEYS.BOOKS, JSON.stringify(localBooks)).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Error attempting book salvage from backup:', err);
+    }
+  }
+
+  // Sanitize each book to repair any corrupt segments, NaN indices, or missing fields
+  const cleanBooks: Book[] = localBooks
+    .map(sanitizeBook)
+    .filter((b): b is Book => b !== null);
+
+  localBooks = cleanBooks;
 
   if (isSupabaseConfigured()) {
     try {
@@ -137,27 +193,31 @@ export async function getBooksFromDb(userId: string): Promise<Book[]> {
 }
 
 export async function saveBookToDb(userId: string, book: Book): Promise<void> {
-  const localRaw = await AsyncStorage.getItem(KEYS.BOOKS);
-  const list: Book[] = localRaw ? JSON.parse(localRaw) : [];
-  const idx = list.findIndex(b => b.id === book.id);
+  const sanitized = sanitizeBook(book) || book;
+  const rawList: Book[] = await readLocal<Book[]>(KEYS.BOOKS, [], isArray);
+  const list: Book[] = rawList
+    .map(sanitizeBook)
+    .filter((b): b is Book => b !== null);
+
+  const idx = list.findIndex(b => b.id === sanitized.id);
   if (idx >= 0) {
-    list[idx] = book;
+    list[idx] = sanitized;
   } else {
-    list.push(book);
+    list.push(sanitized);
   }
   await AsyncStorage.setItem(KEYS.BOOKS, JSON.stringify(list));
 
   if (isSupabaseConfigured()) {
     try {
       await supabase.from('contents').upsert({
-        id: book.id,
+        id: sanitized.id,
         owner_id: userId,
-        title: book.title,
-        author: book.author,
-        source_type: book.sourceType || 'text',
-        word_count: book.wordCount || 0,
-        cover_color: book.coverColor,
-        status: book.status === 'finished' ? 'ready' : 'processing',
+        title: sanitized.title,
+        author: sanitized.author,
+        source_type: sanitized.sourceType || 'text',
+        word_count: sanitized.wordCount || 0,
+        cover_color: sanitized.coverColor,
+        status: sanitized.status === 'finished' ? 'ready' : 'processing',
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -167,12 +227,13 @@ export async function saveBookToDb(userId: string, book: Book): Promise<void> {
 }
 
 export async function deleteBookFromDb(userId: string, bookId: string): Promise<void> {
-  const localRaw = await AsyncStorage.getItem(KEYS.BOOKS);
-  if (localRaw) {
-    const list: Book[] = JSON.parse(localRaw);
-    const updated = list.filter(b => b.id !== bookId);
-    await AsyncStorage.setItem(KEYS.BOOKS, JSON.stringify(updated));
-  }
+  const rawList: Book[] = await readLocal<Book[]>(KEYS.BOOKS, [], isArray);
+  const list: Book[] = rawList
+    .map(sanitizeBook)
+    .filter((b): b is Book => b !== null);
+
+  const updated = list.filter(b => b.id !== bookId);
+  await AsyncStorage.setItem(KEYS.BOOKS, JSON.stringify(updated));
 
   if (isSupabaseConfigured()) {
     try {
@@ -188,8 +249,29 @@ export async function deleteBookFromDb(userId: string, bookId: string): Promise<
 // ----------------------------------------------------------------------------
 
 export async function getSessionsFromDb(userId: string): Promise<ReadingSession[]> {
-  const localRaw = await AsyncStorage.getItem(KEYS.SESSIONS);
-  const local: ReadingSession[] = localRaw ? JSON.parse(localRaw) : [];
+  let local: ReadingSession[] = await readLocal<ReadingSession[]>(KEYS.SESSIONS, [], isArray);
+
+  if (local.length === 0) {
+    try {
+      const corruptRaw = await AsyncStorage.getItem(`${KEYS.SESSIONS}.corrupt`);
+      if (corruptRaw) {
+        const salvaged = salvageJsonObjects(corruptRaw, (item): item is ReadingSession => Boolean(sanitizeSession(item)));
+        if (salvaged.length > 0) {
+          local = salvaged.map(sanitizeSession).filter((s): s is ReadingSession => s !== null);
+          console.info(`Recovered ${local.length} session(s) from corrupt storage backup.`);
+          await AsyncStorage.setItem(KEYS.SESSIONS, JSON.stringify(local)).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Error attempting session salvage from backup:', err);
+    }
+  }
+
+  const cleanSessions = local
+    .map(sanitizeSession)
+    .filter((s): s is ReadingSession => s !== null);
+
+  local = cleanSessions;
 
   if (isSupabaseConfigured()) {
     try {
@@ -219,22 +301,26 @@ export async function getSessionsFromDb(userId: string): Promise<ReadingSession[
 }
 
 export async function saveSessionToDb(userId: string, session: ReadingSession): Promise<void> {
-  const localRaw = await AsyncStorage.getItem(KEYS.SESSIONS);
-  const list: ReadingSession[] = localRaw ? JSON.parse(localRaw) : [];
-  list.unshift(session);
+  const sanitized = sanitizeSession(session) || session;
+  const rawList: ReadingSession[] = await readLocal<ReadingSession[]>(KEYS.SESSIONS, [], isArray);
+  const list: ReadingSession[] = rawList
+    .map(sanitizeSession)
+    .filter((s): s is ReadingSession => s !== null);
+
+  list.unshift(sanitized);
   await AsyncStorage.setItem(KEYS.SESSIONS, JSON.stringify(list));
 
   if (isSupabaseConfigured()) {
     try {
       await supabase.from('reading_sessions').insert({
-        id: session.id,
+        id: sanitized.id,
         user_id: userId,
-        content_id: session.bookId,
-        started_at: session.startedAt,
+        content_id: sanitized.bookId,
+        started_at: sanitized.startedAt,
         ended_at: new Date().toISOString(),
-        seconds_read: session.secondsRead,
-        paragraphs_read: (session.segmentsCompleted || 1) * 5,
-        focus_score: (session.comprehensionScore || 4) * 20,
+        seconds_read: sanitized.secondsRead,
+        paragraphs_read: (sanitized.segmentsCompleted || 1) * 5,
+        focus_score: (sanitized.comprehensionScore || 4) * 20,
       });
     } catch (err) {
       console.warn('Supabase saveSessionToDb error:', err);
@@ -243,8 +329,29 @@ export async function saveSessionToDb(userId: string, session: ReadingSession): 
 }
 
 export async function getDailyActivitiesFromDb(userId: string): Promise<DailyActivity[]> {
-  const localRaw = await AsyncStorage.getItem(KEYS.DAILY);
-  const local: DailyActivity[] = localRaw ? JSON.parse(localRaw) : [];
+  let local: DailyActivity[] = await readLocal<DailyActivity[]>(KEYS.DAILY, [], isArray);
+
+  if (local.length === 0) {
+    try {
+      const corruptRaw = await AsyncStorage.getItem(`${KEYS.DAILY}.corrupt`);
+      if (corruptRaw) {
+        const salvaged = salvageJsonObjects(corruptRaw, (item): item is DailyActivity => Boolean(sanitizeDailyActivity(item)));
+        if (salvaged.length > 0) {
+          local = salvaged.map(sanitizeDailyActivity).filter((d): d is DailyActivity => d !== null);
+          console.info(`Recovered ${local.length} daily activity record(s) from corrupt storage backup.`);
+          await AsyncStorage.setItem(KEYS.DAILY, JSON.stringify(local)).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.warn('Error attempting daily activity salvage from backup:', err);
+    }
+  }
+
+  const cleanDaily = local
+    .map(sanitizeDailyActivity)
+    .filter((d): d is DailyActivity => d !== null);
+
+  local = cleanDaily;
 
   if (isSupabaseConfigured()) {
     try {
@@ -271,13 +378,17 @@ export async function getDailyActivitiesFromDb(userId: string): Promise<DailyAct
 }
 
 export async function saveDailyActivityToDb(userId: string, act: DailyActivity): Promise<void> {
-  const localRaw = await AsyncStorage.getItem(KEYS.DAILY);
-  const list: DailyActivity[] = localRaw ? JSON.parse(localRaw) : [];
-  const idx = list.findIndex(a => a.date === act.date);
+  const sanitized = sanitizeDailyActivity(act) || act;
+  const rawList: DailyActivity[] = await readLocal<DailyActivity[]>(KEYS.DAILY, [], isArray);
+  const list: DailyActivity[] = rawList
+    .map(sanitizeDailyActivity)
+    .filter((d): d is DailyActivity => d !== null);
+
+  const idx = list.findIndex(a => a.date === sanitized.date);
   if (idx >= 0) {
-    list[idx] = act;
+    list[idx] = sanitized;
   } else {
-    list.push(act);
+    list.push(sanitized);
   }
   await AsyncStorage.setItem(KEYS.DAILY, JSON.stringify(list));
 

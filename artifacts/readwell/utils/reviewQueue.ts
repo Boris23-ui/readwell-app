@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Question } from '@/types';
 
+import { parseStoredJson, isArray } from './safeStorage';
+
 export interface ReviewItem {
   id: string;
   bookId: string;
@@ -14,6 +16,18 @@ export interface ReviewItem {
 
 const REVIEW_QUEUE_KEY = '@readwell/review-queue';
 
+function isValidReviewItem(item: unknown): item is ReviewItem {
+  if (!item || typeof item !== 'object') return false;
+  const r = item as Record<string, unknown>;
+  return (
+    typeof r.id === 'string' &&
+    typeof r.bookId === 'string' &&
+    typeof r.nextReviewAt === 'string' &&
+    typeof r.stage === 'number' &&
+    Boolean(r.question && typeof r.question === 'object')
+  );
+}
+
 function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
 }
@@ -21,8 +35,8 @@ function generateId(): string {
 export async function getReviewQueue(): Promise<ReviewItem[]> {
   try {
     const data = await AsyncStorage.getItem(REVIEW_QUEUE_KEY);
-    if (!data) return [];
-    return JSON.parse(data);
+    const { value } = parseStoredJson<unknown[]>(data, [], isArray);
+    return value.filter(isValidReviewItem);
   } catch {
     return [];
   }

@@ -23,6 +23,8 @@ export function BookCard({ book, onPress }: Props) {
   return (
     <TouchableOpacity
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${book.title} by ${book.author || 'Anonymous Author'}. ${progress}% complete, ${currentStage} of ${totalSegments} parts. ${book.status === 'finished' ? 'Review' : 'Continue reading'}`}
       style={[
         styles.feltCard,
         {
@@ -149,7 +151,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   modePillText: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: 'Inter_600SemiBold',
     letterSpacing: 0.8,
   },

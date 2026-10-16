@@ -26,21 +26,28 @@ export default function LibraryScreen() {
   const { books, deleteBook } = useApp();
   const [query, setQuery] = useState('');
 
-  const filtered = books.filter(
-    b =>
-      b.title.toLowerCase().includes(query.toLowerCase()) ||
-      b.author.toLowerCase().includes(query.toLowerCase())
+  const normalizedQuery = (query || '').toLowerCase().trim();
+  const filtered = (books || []).filter(
+    b => {
+      if (!b) return false;
+      const title = (b.title || '').toLowerCase();
+      const author = (b.author || '').toLowerCase();
+      return title.includes(normalizedQuery) || author.includes(normalizedQuery);
+    }
   );
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
   const botPad = Platform.OS === 'web' ? 34 : 0;
 
   const handleDelete = (book: Book) => {
-    Alert.alert('Remove Book', `Remove "${book.title}" from your library?`, [
+    const bookTitle = book?.title || 'Untitled';
+    Alert.alert('Remove Book', `Remove "${bookTitle}" from your library?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        deleteBook(book.id);
+        if (book?.id) {
+          deleteBook(book.id);
+        }
       } },
     ]);
   };
@@ -93,7 +100,7 @@ export default function LibraryScreen() {
 
       <FlatList
         data={filtered}
-        keyExtractor={b => b.id}
+        keyExtractor={(b, index) => b?.id || `book-${index}`}
         contentContainerStyle={[
           styles.list,
           { paddingBottom: botPad + 100 },

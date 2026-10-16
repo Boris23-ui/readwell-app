@@ -9,6 +9,7 @@ const validQuiz = {
       options: ["A", "B", "C", "D"],
       correctIndex: 0,
       evidenceQuote: "A short quote.",
+      explanation: "The passage states this directly.",
       isOpenEnded: false,
     },
     {
@@ -17,6 +18,7 @@ const validQuiz = {
       options: ["A", "B", "C", "D"],
       correctIndex: 1,
       evidenceQuote: "Another short quote.",
+      explanation: "The passage names who was present.",
       isOpenEnded: false,
     },
     {
@@ -25,6 +27,7 @@ const validQuiz = {
       options: ["A", "B", "C", "D"],
       correctIndex: 2,
       evidenceQuote: "The word appears here.",
+      explanation: "Context shows the word's meaning.",
       isOpenEnded: false,
     },
     {
@@ -33,6 +36,7 @@ const validQuiz = {
       options: ["A", "B", "C", "D"],
       correctIndex: 3,
       evidenceQuote: "This supports the inference.",
+      explanation: "The passage implies this without stating it.",
       isOpenEnded: false,
     },
     {

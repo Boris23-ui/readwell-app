@@ -13,6 +13,7 @@ import {
 import { deletePdfPages } from '@/utils/api';
 import { runOrphanCleanup, type PendingPdfImport } from './orphanCleanup';
 import { applyOcrMigration, parsePendingImports } from '../utils/ocr';
+import { parseStoredJson, isArray } from '../utils/safeStorage';
 import {
   getProfileFromDb,
   saveProfileToDb,
@@ -145,18 +146,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // On every launch we retry those deletions and remove the ones that
         // succeed.
         const deletionsRaw = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS);
-        if (deletionsRaw) {
-          const pendingDeletions: string[] = JSON.parse(deletionsRaw);
-          if (pendingDeletions.length > 0) {
-            const results = await Promise.allSettled(
-              pendingDeletions.map(bookId => deletePdfPages(bookId)),
-            );
-            const stillFailing = pendingDeletions.filter((_, i) => results[i].status === 'rejected');
-            await AsyncStorage.setItem(
-              STORAGE_KEYS.PENDING_PDF_DELETIONS,
-              JSON.stringify(stillFailing),
-            );
-          }
+        const { value: pendingDeletions } = parseStoredJson<string[]>(
+          deletionsRaw,
+          [],
+          (v): v is string[] => Array.isArray(v) && v.every(item => typeof item === 'string')
+        );
+        if (pendingDeletions.length > 0) {
+          const results = await Promise.allSettled(
+            pendingDeletions.map(bookId => deletePdfPages(bookId)),
+          );
+          const stillFailing = pendingDeletions.filter((_, i) => results[i].status === 'rejected');
+          await AsyncStorage.setItem(
+            STORAGE_KEYS.PENDING_PDF_DELETIONS,
+            JSON.stringify(stillFailing),
+          );
         }
       } catch (e) {
         console.error('Failed to load application data:', e);
@@ -226,7 +229,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // is retried on the next app launch.
           AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS)
             .then(raw => {
-              const queue: string[] = raw ? JSON.parse(raw) : [];
+              const { value: queue } = parseStoredJson<string[]>(
+                raw,
+                [],
+                (v): v is string[] => Array.isArray(v) && v.every(item => typeof item === 'string')
+              );
               if (!queue.includes(serverBookId)) {
                 queue.push(serverBookId);
               }
@@ -240,7 +247,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               // Deletion succeeded — remove from the queue.
               AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_DELETIONS)
                 .then(raw => {
-                  const queue: string[] = raw ? JSON.parse(raw) : [];
+                  const { value: queue } = parseStoredJson<string[]>(
+                    raw,
+                    [],
+                    (v): v is string[] => Array.isArray(v) && v.every(item => typeof item === 'string')
+                  );
                   const trimmed = queue.filter(bid => bid !== serverBookId);
                   return AsyncStorage.setItem(
                     STORAGE_KEYS.PENDING_PDF_DELETIONS,
@@ -412,7 +423,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const registerPendingPdfImport = useCallback(async (serverBookId: string) => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_IMPORTS);
-      const existing: PendingPdfImport[] = raw ? JSON.parse(raw) : [];
+      const existing: PendingPdfImport[] = parsePendingImports(raw) ?? [];
       const filtered = existing.filter(e => e.serverBookId !== serverBookId);
       filtered.push({ serverBookId, registeredAt: new Date().toISOString() });
       await AsyncStorage.setItem(STORAGE_KEYS.PENDING_PDF_IMPORTS, JSON.stringify(filtered));
@@ -425,7 +436,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_PDF_IMPORTS);
       if (!raw) return;
-      const existing: PendingPdfImport[] = JSON.parse(raw);
+      const existing: PendingPdfImport[] = parsePendingImports(raw) ?? [];
       const filtered = existing.filter(e => e.serverBookId !== serverBookId);
       await AsyncStorage.setItem(STORAGE_KEYS.PENDING_PDF_IMPORTS, JSON.stringify(filtered));
     } catch (e) {

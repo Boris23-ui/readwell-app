@@ -29,16 +29,26 @@ export default function StatsScreen() {
   const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
   const botPad = Platform.OS === 'web' ? 34 : 0;
 
-  const totalHours = Math.floor(profile.totalMinutesRead / 60);
-  const totalMins = profile.totalMinutesRead % 60;
-  const hoursStr = totalHours > 0 ? `${totalHours}h ${totalMins}m` : `${profile.totalMinutesRead}m`;
+  const totalMinutesRead = Number.isFinite(profile?.totalMinutesRead)
+    ? Math.max(0, profile.totalMinutesRead)
+    : 0;
+  const totalHours = Math.floor(totalMinutesRead / 60);
+  const totalMins = totalMinutesRead % 60;
+  const hoursStr = totalHours > 0 ? `${totalHours}h ${totalMins}m` : `${totalMinutesRead}m`;
 
-  const finishedBooks = books.filter(b => b.status === 'finished').length;
+  const finishedBooks = (books || []).filter(b => b?.status === 'finished').length;
 
+  const validSessions = (sessions || []).filter(
+    s => typeof s?.comprehensionScore === 'number' && Number.isFinite(s.comprehensionScore)
+  );
   const avgScore =
-    sessions.length > 0
-      ? Math.round(sessions.reduce((sum, s) => sum + s.comprehensionScore, 0) / sessions.length)
+    validSessions.length > 0
+      ? Math.round(
+          validSessions.reduce((sum, s) => sum + Math.max(0, s.comprehensionScore), 0) /
+            validSessions.length
+        )
       : 0;
+  const earnedBadges = Array.isArray(profile?.badges) ? profile.badges : [];
 
   return (
     <ScrollView
@@ -143,17 +153,23 @@ export default function StatsScreen() {
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>Streak</Text>
         <View style={styles.streakRow}>
           <View style={styles.streakItem}>
-            <Text style={[styles.streakNum, { color: colors.terracotta }]}>{profile.streakCurrent}</Text>
+            <Text style={[styles.streakNum, { color: colors.terracotta }]}>
+              {profile?.streakCurrent ?? 0}
+            </Text>
             <Text style={[styles.streakLabelMono, { color: colors.mutedForeground }]}>CURRENT</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.streakItem}>
-            <Text style={[styles.streakNum, { color: colors.honeyDeep }]}>{profile.streakBest}</Text>
+            <Text style={[styles.streakNum, { color: colors.honeyDeep }]}>
+              {profile?.streakBest ?? 0}
+            </Text>
             <Text style={[styles.streakLabelMono, { color: colors.mutedForeground }]}>BEST</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.streakItem}>
-            <Text style={[styles.streakNum, { color: colors.slateDeep }]}>{sessions.length}</Text>
+            <Text style={[styles.streakNum, { color: colors.slateDeep }]}>
+              {(sessions || []).length}
+            </Text>
             <Text style={[styles.streakLabelMono, { color: colors.mutedForeground }]}>SESSIONS</Text>
           </View>
         </View>
@@ -170,7 +186,7 @@ export default function StatsScreen() {
           ]}
         >
           {ALL_BADGES.map(key => (
-            <BadgeItem key={key} badgeKey={key} earned={profile.badges.includes(key)} />
+            <BadgeItem key={key} badgeKey={key} earned={earnedBadges.includes(key)} />
           ))}
         </View>
       </Animated.View>

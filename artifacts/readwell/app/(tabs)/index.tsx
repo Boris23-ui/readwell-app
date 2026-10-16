@@ -32,14 +32,20 @@ export default function HomeScreen() {
   const { strategy, dueFlashcards } = useCoach();
 
 
-  const todayActivity = getTodayActivity();
-  const todayMinutes = todayActivity?.minutesRead ?? 0;
-  const goalProgress = Math.min(1, todayMinutes / Math.max(profile.dailyGoalMinutes, 1));
-  const currentBooks = books.filter(b => b.status === 'in_progress');
-  const latestBook = currentBooks[0] ?? (books.length > 0 ? books[0] : null);
+  const todayActivity = getTodayActivity ? getTodayActivity() : null;
+  const todayMinutes = Number.isFinite(todayActivity?.minutesRead)
+    ? Math.max(0, todayActivity!.minutesRead)
+    : 0;
+  const goalMinutes = Number.isFinite(profile?.dailyGoalMinutes) && profile.dailyGoalMinutes > 0
+    ? profile.dailyGoalMinutes
+    : 20;
+  const goalProgress = Math.min(1, todayMinutes / goalMinutes);
+  const currentBooks = (books || []).filter(b => b && b.status === 'in_progress');
+  const latestBook = currentBooks[0] ?? ((books && books.length > 0) ? books[0] : null);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const xpProgress = getXpProgressInLevel(profile.xp);
+  const xp = Number.isFinite(profile?.xp) ? Math.max(0, profile.xp) : 0;
+  const xpProgress = getXpProgressInLevel(xp);
 
   const topPad = Platform.OS === 'web' ? 44 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -65,7 +71,7 @@ export default function HomeScreen() {
           </Text>
           <View style={[styles.heroLevelPill, { backgroundColor: `${colors.honey}33` }]}>
             <Text style={[styles.heroLevelText, { color: colors.honeyDeep }]}>
-              LV {profile.level} · {greeting.toUpperCase()}
+              LV {profile?.level ?? 1} · {greeting.toUpperCase()}
             </Text>
           </View>
         </View>
@@ -125,7 +131,7 @@ export default function HomeScreen() {
             styles.feltStatCard,
             {
               backgroundColor: colors.card,
-              borderColor: profile.streakCurrent > 0 ? `${colors.terracotta}66` : colors.border,
+              borderColor: (profile?.streakCurrent ?? 0) > 0 ? `${colors.terracotta}66` : colors.border,
               shadowColor: colors.shadow,
             },
           ]}
@@ -133,10 +139,10 @@ export default function HomeScreen() {
           <Feather
             name="zap"
             size={22}
-            color={profile.streakCurrent > 0 ? colors.terracotta : colors.mutedForeground}
+            color={(profile?.streakCurrent ?? 0) > 0 ? colors.terracotta : colors.mutedForeground}
           />
           <Text style={[styles.statBigNum, { color: colors.foreground }]}>
-            {profile.streakCurrent}
+            {profile?.streakCurrent ?? 0}
           </Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>
             DAY STREAK
@@ -169,7 +175,7 @@ export default function HomeScreen() {
             </View>
           </ProgressRing>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground, marginTop: 4 }]}>
-            GOAL: {profile.dailyGoalMinutes}M
+            GOAL: {goalMinutes}M
           </Text>
         </View>
       </Animated.View>
@@ -186,13 +192,13 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <Text style={[styles.statBigNum, { color: colors.slateDeep }]}>{profile.xp}</Text>
+          <Text style={[styles.statBigNum, { color: colors.slateDeep }]}>{xp}</Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>TOTAL XP</Text>
           <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
             <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
           </View>
           <Text style={[styles.xpNextMono, { color: colors.mutedForeground }]}>
-            {xpProgress.required - xpProgress.current} to Lv {profile.level + 1}
+            {xpProgress.required - xpProgress.current} to Lv {(profile?.level ?? 1) + 1}
           </Text>
         </View>
       </Animated.View>
@@ -284,13 +290,13 @@ export default function HomeScreen() {
 
       {currentBooks.length > 0 ? (
         <View style={{ marginTop: 14 }}>
-          {currentBooks.map(book => (
+          {currentBooks.map((book, idx) => (
             <BookCard
-              key={book.id}
+              key={book?.id || `curr-${idx}`}
               book={book}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push(`/reader/${book.id}`);
+                if (book?.id) router.push(`/reader/${book.id}`);
               }}
             />
           ))}
@@ -301,7 +307,7 @@ export default function HomeScreen() {
             book={latestBook}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(`/reader/${latestBook.id}`);
+              if (latestBook?.id) router.push(`/reader/${latestBook.id}`);
             }}
           />
         </View>

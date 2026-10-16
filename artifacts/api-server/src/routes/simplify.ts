@@ -50,14 +50,26 @@ router.post("/simplify", async (req, res) => {
       cacheTtlMs: 24 * 60 * 60 * 1000, // 24 hours — simplified text doesn't change
       prompt,
       systemInstruction,
+      responseMimeType: 'application/json',
       maxOutputTokens: 2500,
       fallbackFn: () => JSON.stringify({
         text: "This section has been marked for simplification. The AI simplification service is temporarily unavailable — please try again in a few minutes, or continue reading the original text.",
       }),
     });
 
-    const parsed = JSON.parse(result.text);
-    if (typeof parsed.text === "string") {
+    let raw = result.text.trim();
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenceMatch && fenceMatch[1]) {
+      raw = fenceMatch[1].trim();
+    }
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = { text: raw };
+    }
+
+    if (typeof parsed?.text === "string") {
       res.json({ text: parsed.text });
     } else if (typeof parsed === "string") {
       res.json({ text: parsed });

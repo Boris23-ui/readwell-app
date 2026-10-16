@@ -90,11 +90,13 @@ export function estimateReadMinutes(wordCount: number): number {
 
 /**
  * Checks whether segment text has sufficient quality for quiz generation.
- * Returns true when the text is too garbled to produce a useful quiz.
+ * Returns true when the text is too garbled or blurry to produce a useful quiz.
  *
- * Two signals are checked:
+ * Signals checked:
  * 1. Word count — OCR noise often yields very few meaningful tokens.
  * 2. Alphabetic-character ratio — garbled text is full of symbols / numbers.
+ * 3. Legible words with vowels — blurry OCR produces vowel-less strings.
+ * 4. Vocabulary diversity — detects repetitive OCR hallucination loops.
  */
 export function isTextQualityTooLow(text: string): boolean {
   const trimmed = text.trim();
@@ -108,6 +110,22 @@ export function isTextQualityTooLow(text: string): boolean {
   const alphaCount = (trimmed.match(/[a-zA-Z]/g) ?? []).length;
   const ratio = alphaCount / trimmed.length;
   if (ratio < 0.45) return true;
+
+  // Check for legible words with vowels (guarding against gibberish OCR strings)
+  const legibleWords = words.filter(w => {
+    const clean = w.replace(/^[^\w]+|[^\w]+$/g, '');
+    return (
+      clean.length >= 2 &&
+      /[a-zA-Z]{2,}/.test(clean) &&
+      /[aeiouy]/i.test(clean) &&
+      !/[bcdfghjklmnpqrstvwxz]{5,}/i.test(clean)
+    );
+  });
+  if (legibleWords.length < 20) return true;
+
+  // Vocabulary richness (guard against repetitive hallucination loops like "echo echo...")
+  const uniqueWords = new Set(legibleWords.map(w => w.toLowerCase()));
+  if (uniqueWords.size < 6) return true;
 
   return false;
 }

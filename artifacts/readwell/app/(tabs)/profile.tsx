@@ -27,9 +27,11 @@ export default function ProfileScreen() {
   const [showGoalPicker, setShowGoalPicker] = useState(false);
   const [showLevelPicker, setShowLevelPicker] = useState(false);
 
-  const xpProgress = getXpProgressInLevel(profile.xp);
-  const initials = profile.name
+  const xpProgress = getXpProgressInLevel(profile?.xp ?? 0);
+  const profileName = (profile?.name || 'Reader').trim();
+  const initials = (profileName || 'R')
     .split(' ')
+    .filter(Boolean)
     .map(w => w[0])
     .join('')
     .toUpperCase()
@@ -51,9 +53,9 @@ export default function ProfileScreen() {
         <View style={[styles.avatar, { backgroundColor: colors.terracotta }]}>
           <Text style={styles.avatarInitials}>{initials}</Text>
         </View>
-        <Text style={[styles.profileName, { color: colors.foreground }]}>{profile.name || 'Reader'}</Text>
+        <Text style={[styles.profileName, { color: colors.foreground }]}>{profileName}</Text>
         <View style={[styles.levelBadge, { backgroundColor: `${colors.honeyDeep}18`, borderColor: `${colors.honeyDeep}66` }]}>
-          <Text style={[styles.levelText, { color: colors.honeyDeep }]}>LV {profile.level} · READER</Text>
+          <Text style={[styles.levelText, { color: colors.honeyDeep }]}>LV {profile?.level ?? 1} · READER</Text>
         </View>
       </Animated.View>
 
@@ -77,7 +79,7 @@ export default function ProfileScreen() {
           <View style={[styles.xpFill, { width: `${levelProgress * 100}%` as any, backgroundColor: colors.slateDeep }]} />
         </View>
         <Text style={[styles.xpSub, { color: colors.mutedForeground }]}>
-          {xpProgress.required - xpProgress.current} XP until Level {profile.level + 1}
+          {xpProgress.required - xpProgress.current} XP until Level {(profile?.level ?? 1) + 1}
         </Text>
       </Animated.View>
 
@@ -93,17 +95,17 @@ export default function ProfileScreen() {
         ]}
       >
         <View style={styles.statItem}>
-          <Text style={[styles.statNum, { color: colors.terracotta }]}>{profile.totalMinutesRead}</Text>
+          <Text style={[styles.statNum, { color: colors.terracotta }]}>{profile?.totalMinutesRead ?? 0}</Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>MIN READ</Text>
         </View>
         <View style={[styles.vDivider, { backgroundColor: colors.border }]} />
         <View style={styles.statItem}>
-          <Text style={[styles.statNum, { color: colors.terracotta }]}>{profile.streakCurrent}</Text>
+          <Text style={[styles.statNum, { color: colors.terracotta }]}>{profile?.streakCurrent ?? 0}</Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>STREAK</Text>
         </View>
         <View style={[styles.vDivider, { backgroundColor: colors.border }]} />
         <View style={styles.statItem}>
-          <Text style={[styles.statNum, { color: colors.sageDeep }]}>{profile.totalBooksFinished}</Text>
+          <Text style={[styles.statNum, { color: colors.sageDeep }]}>{profile?.totalBooksFinished ?? 0}</Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>FINISHED</Text>
         </View>
 
@@ -136,7 +138,7 @@ export default function ProfileScreen() {
           <View style={styles.settingLabel}>
             <Text style={[styles.settingTitle, { color: colors.foreground }]}>Daily Goal</Text>
             <Text style={[styles.settingValue, { color: colors.mutedForeground }]}>
-              {profile.dailyGoalMinutes} minutes/day
+              {profile?.dailyGoalMinutes ?? 20} minutes/day
             </Text>
           </View>
           <Feather name={showGoalPicker ? 'chevron-up' : 'chevron-right'} size={16} color={colors.mutedForeground} />

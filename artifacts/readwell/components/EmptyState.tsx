@@ -14,10 +14,16 @@ export function EmptyState({ icon, title, subtitle, children }: Props) {
   const colors = useColors();
   return (
     <View style={styles.container}>
-      <View style={[styles.iconBg, { backgroundColor: colors.muted }]}>
+      <View
+        style={[styles.iconBg, { backgroundColor: colors.muted }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         <Feather name={icon as any} size={32} color={colors.mutedForeground} />
       </View>
-      <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+      <Text accessibilityRole="header" style={[styles.title, { color: colors.foreground }]}>
+        {title}
+      </Text>
       {subtitle && (
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>{subtitle}</Text>
       )}

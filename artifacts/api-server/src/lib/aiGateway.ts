@@ -94,7 +94,7 @@ const DEFAULT_TTL: Record<AIPurpose, number> = {
   coach: 0,                        // never cache chat responses
 };
 
-const GEMINI_TIMEOUT_MS = 30_000;
+const GEMINI_TIMEOUT_MS = 60_000;
 
 class AIGateway {
   private client: GoogleGenAI | null = null;
@@ -104,7 +104,7 @@ class AIGateway {
   private initialized = false;
 
   constructor() {
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
     this.agentModelName = process.env.GEMINI_AGENT_MODEL || 'gemini-3-flash-preview';
     this.init();
   }
@@ -120,7 +120,7 @@ class AIGateway {
         apiKey,
         httpOptions: {
           timeout: GEMINI_TIMEOUT_MS,
-          retryOptions: { attempts: 1 },
+          retryOptions: { attempts: 3 },
         },
       });
       this.initialized = true;
@@ -195,16 +195,28 @@ class AIGateway {
         systemInstruction: req.systemInstruction,
         maxOutputTokens: req.maxOutputTokens,
       };
+      if (req.responseMimeType) {
+        config.responseMimeType = req.responseMimeType;
+      }
       if (req.responseSchema) {
-        config.responseMimeType = req.responseMimeType || 'application/json';
+        config.responseMimeType = (config.responseMimeType as string) || 'application/json';
         config.responseSchema = req.responseSchema;
       }
       if (req.temperature !== undefined) {
         config.temperature = req.temperature;
       }
 
-      const targetModel =
+      const primaryModel =
         req.model || (req.purpose === 'coach' ? this.agentModelName : this.modelName);
+
+      const candidateModels = Array.from(
+        new Set([
+          primaryModel,
+          'gemini-3-flash-preview',
+          'gemini-3.7-flash',
+          'gemini-3.5-flash',
+        ]),
+      );
 
       const parts: any[] = [{ text: req.prompt }];
       if (req.image) {
@@ -216,15 +228,51 @@ class AIGateway {
         });
       }
 
-      const response = await this.client.models.generateContent({
-        model: targetModel,
-        contents: [{ role: 'user', parts }],
-        config,
-      });
+      let text = '';
+      let lastError: unknown = null;
 
-      const text = (response.text ?? '').trim();
+      for (const currentModel of candidateModels) {
+        try {
+          const response = await this.client.models.generateContent({
+            model: currentModel,
+            contents: [{ role: 'user', parts }],
+            config,
+          });
+          const candidateText = (response.text ?? '').trim();
+          if (candidateText) {
+            text = candidateText;
+            if (currentModel !== primaryModel) {
+              logger.info(
+                { primaryModel, fallbackModel: currentModel, purpose: req.purpose },
+                'AIGateway: Successfully generated using fallback model',
+              );
+            }
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = String(err?.message || '');
+          const isQuotaOrUnavailable =
+            errMsg.includes('429') ||
+            errMsg.includes('quota') ||
+            errMsg.includes('RESOURCE_EXHAUSTED') ||
+            errMsg.includes('503') ||
+            errMsg.includes('404') ||
+            errMsg.includes('Too Many Requests') ||
+            errMsg.includes('Service Unavailable');
+          if (isQuotaOrUnavailable) {
+            logger.warn(
+              { failedModel: currentModel, error: errMsg.slice(0, 120), purpose: req.purpose },
+              'AIGateway: Model rate limited or unavailable, trying next candidate model...',
+            );
+            continue;
+          }
+          throw err;
+        }
+      }
+
       if (!text) {
-        throw new Error('Empty response from Gemini');
+        throw lastError || new Error('Empty response from all candidate models');
       }
 
       // Estimate token counts (rough: 1 token ≈ 4 chars)

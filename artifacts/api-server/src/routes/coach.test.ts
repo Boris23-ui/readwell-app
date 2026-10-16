@@ -1,6 +1,80 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+
+const { TEST_USER_ID } = vi.hoisted(() => ({
+  TEST_USER_ID: `test_user_${Date.now()}`,
+}));
+
+// Routes require auth and read req.user.id. Stub only the middleware so these
+// tests exercise route logic; real auth behaviour is not under test here.
+vi.mock('../middlewares/auth', () => ({
+  requireAuth: (req: any, _res: any, next: () => void) => {
+    req.user = { id: TEST_USER_ID };
+    next();
+  },
+}));
+
+// In-memory stand-in for the Supabase admin client. Supports only the calls
+// coachMemory makes: select/eq/order/limit/single, upsert and insert.
+vi.mock('../lib/supabase', () => {
+  const tables: Record<string, any[]> = {};
+  const rowKey = (row: any) => row.id ?? row.user_id;
+
+  const from = (table: string) => {
+    tables[table] ??= [];
+    const filters: Array<[string, unknown]> = [];
+    let single = false;
+    let limitN: number | undefined;
+
+    const run = () => {
+      let rows = tables[table].filter((r) => filters.every(([c, v]) => r[c] === v));
+      if (limitN !== undefined) rows = rows.slice(0, limitN);
+      if (single) {
+        return rows[0]
+          ? { data: rows[0], error: null }
+          : { data: null, error: { message: 'no rows' } };
+      }
+      return { data: rows, error: null };
+    };
+
+    const builder: any = {
+      select: () => builder,
+      eq: (col: string, val: unknown) => {
+        filters.push([col, val]);
+        return builder;
+      },
+      order: () => builder,
+      limit: (n: number) => {
+        limitN = n;
+        return builder;
+      },
+      single: () => {
+        single = true;
+        return builder;
+      },
+      upsert: (row: any) => {
+        const idx = tables[table].findIndex((r) => rowKey(r) === rowKey(row));
+        if (idx >= 0) tables[table][idx] = row;
+        else tables[table].push(row);
+        return Promise.resolve({ data: null, error: null });
+      },
+      insert: (rows: any) => {
+        tables[table].push(...(Array.isArray(rows) ? rows : [rows]));
+        return Promise.resolve({ data: null, error: null });
+      },
+      then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+        Promise.resolve(run()).then(resolve, reject),
+    };
+    return builder;
+  };
+
+  return {
+    getSupabaseAdmin: () => ({ from }),
+    isSupabaseConfigured: () => true,
+  };
+});
+
 import coachRouter from './coach';
 import { applySm2, calculateReadingPace } from '../lib/coachAgent';
 import { Flashcard } from '../lib/coachMemory';
@@ -67,7 +141,7 @@ describe('Coach Agent API & Logic', () => {
   });
 
   describe('Coach Endpoints', () => {
-    const testUser = `test_user_${Date.now()}`;
+    const testUser = TEST_USER_ID;
 
     it('rejects chat request when message is empty', async () => {
       const res = await request(app)

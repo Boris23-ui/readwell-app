@@ -14,6 +14,8 @@ export function StatCard({ label, value, icon, accent }: Props) {
   const borderTint = accent ? `${accent}55` : colors.border;
   return (
     <View
+      accessible
+      accessibilityLabel={`${label}: ${value}`}
       style={[
         styles.card,
         {
@@ -54,7 +56,7 @@ const styles = StyleSheet.create({
     lineHeight: 28,
   },
   label: {
-    fontSize: 9.5,
+    fontSize: 10.5,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.8,
     textAlign: 'center',

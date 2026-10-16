@@ -442,4 +442,33 @@ describe("computePageConfidence", () => {
     const noise = "a b c d e f g h i j k l m n o p q r s t";
     expect(computePageConfidence(noise)).toBe(true);
   });
+
+  it("returns true (low confidence) when words lack vowels (OCR noise from blurry scan)", () => {
+    // 22 tokens, but none contain vowels — characteristic of severe blur OCR noise
+    const vowelLess = "bcdf ghjk lmnp qrsv wxzb kjfg trps plmk bcdf ghjk lmnp qrsv wxzb kjfg trps plmk bcdf ghjk lmnp qrsv wxzb kjfg";
+    expect(computePageConfidence(vowelLess)).toBe(true);
+  });
+
+  it("returns true (low confidence) when text is dominated by non-alphabetic symbols", () => {
+    // High ratio of punctuation and OCR noise symbols
+    const noisy = "!@#$ %^&* ()_+ |~=- word01 word02 word03 word04 word05 !@#$ %^&* ()_+ |~=- `{}\" :?>< 1234 5678 word06 word07";
+    expect(computePageConfidence(noisy)).toBe(true);
+  });
+
+  it("returns true (low confidence) on repetitive hallucination loops", () => {
+    // 25 valid words, but vocabulary is a single repeating token from a scan pattern artifact
+    const loop = Array.from({ length: 25 }, () => "echo").join(" ");
+    expect(computePageConfidence(loop)).toBe(true);
+  });
+
+  it("returns true (low confidence) on consonant cluster noise", () => {
+    // Words containing impossible consonant clusters (5+ consecutive consonants)
+    const clusterNoise = "bczklmn dfghjkl pqrstnv wzxcklm bczklmn dfghjkl pqrstnv wzxcklm bczklmn dfghjkl pqrstnv wzxcklm bczklmn dfghjkl pqrstnv wzxcklm";
+    expect(computePageConfidence(clusterNoise)).toBe(true);
+  });
+
+  it("returns true (low confidence) when text is heavily fragmented into single characters", () => {
+    const fragmented = "t h i s i s a b l u r r y p a g e w i t h b r o k e n l e t t e r s";
+    expect(computePageConfidence(fragmented)).toBe(true);
+  });
 });

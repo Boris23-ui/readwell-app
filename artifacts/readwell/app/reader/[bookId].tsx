@@ -62,17 +62,30 @@ export default function ReaderScreen() {
     return <PdfReader book={book} />;
   }
 
-  const segmentIndex = book.currentSegmentIndex;
-  const segment = book.segments[segmentIndex];
-  const totalSegments = book.segments.length;
+  const segmentIndex = Math.max(0, book.currentSegmentIndex || 0);
+  const segments = Array.isArray(book.segments) ? book.segments : [];
+  const segment = segments[segmentIndex];
+  const totalSegments = segments.length;
   const progressFraction = totalSegments > 0 ? segmentIndex / totalSegments : 0;
 
   if (!segment) {
+    const handleRestartBook = async () => {
+      await updateBook(book.id, { currentSegmentIndex: 0, status: 'in_progress' });
+    };
+
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.foreground }]}>You've finished this book!</Text>
-        <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}>
-          <Text style={styles.primaryBtnText}>Back to Home</Text>
+        <Text style={[styles.errorText, { color: colors.foreground }]}>
+          {totalSegments > 0 && segmentIndex >= totalSegments ? "You've finished this book!" : "Unable to load this section."}
+        </Text>
+        <TouchableOpacity
+          onPress={handleRestartBook}
+          style={[styles.primaryBtn, { backgroundColor: colors.primary, marginBottom: 12 }]}
+        >
+          <Text style={styles.primaryBtnText}>Read from Beginning</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)')}>
+          <Text style={[styles.backLink, { color: colors.mutedForeground }]}>Back to Home</Text>
         </TouchableOpacity>
       </View>
     );
@@ -90,7 +103,7 @@ export default function ReaderScreen() {
   };
 
   const handleSimplify = async () => {
-    if (!segment) return;
+    if (!segment || !Array.isArray(segment.paragraphs)) return;
 
     try {
       setIsSimplifying(true);
@@ -110,7 +123,9 @@ export default function ReaderScreen() {
     const secondsRead = Math.floor((Date.now() - sessionStart) / 1000);
     
     // We send additional metrics for the ML Insight
-    const wordCount = segment?.paragraphs.join(' ').split(/\s+/).length || 200;
+    const wordCount = Array.isArray(segment?.paragraphs)
+      ? segment.paragraphs.join(' ').split(/\s+/).filter(Boolean).length || 200
+      : 200;
     
     router.push({
       pathname: '/quiz/[bookId]',

@@ -107,8 +107,12 @@ function requestMultipartJson<T>(
       error.code = parsed.code;
       finish(() => reject(error));
     };
-    xhr.onerror = () => finish(() => reject(new Error('Network error while uploading the file.')));
-    xhr.ontimeout = () => finish(() => reject(new Error('The file upload timed out.')));
+    const failWith = (message: string, code: string) =>
+      finish(() => reject(Object.assign(new Error(message), { code })));
+    xhr.onerror = () =>
+      failWith('Upload failed. Check your internet connection and try again.', 'NETWORK_ERROR');
+    xhr.ontimeout = () =>
+      failWith('The upload took too long. Try again on a stronger connection or with a smaller file.', 'UPLOAD_TIMEOUT');
     xhr.onabort = () => finish(() => reject(createAbortError()));
     options.signal?.addEventListener('abort', abort, { once: true });
 
@@ -211,11 +215,19 @@ export async function generateQuiz(
   wordCount?: number,
   complexity?: number
 ): Promise<{ questions: any[] }> {
-  const response = await fetch(`${getBaseUrl()}/api/quiz/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ segmentText, readingLevel, comprehensionScore, secondsRead, wordCount, complexity }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${getBaseUrl()}/api/quiz/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segmentText, readingLevel, comprehensionScore, secondsRead, wordCount, complexity }),
+    });
+  } catch {
+    // fetch rejects (no response) when offline or the server is unreachable
+    const networkError = new Error('Network request failed') as Error & { code?: string };
+    networkError.code = 'NETWORK_ERROR';
+    throw networkError;
+  }
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const error = new Error((err as any).error ?? 'Failed to generate quiz') as Error & { code?: string };

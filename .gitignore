@@ -31,6 +31,9 @@ node_modules
 .env
 .env.*
 !.env.example
+service-account.json
+*service-account*.json
+*.key.json
 
 # misc
 /.sass-cache

@@ -95,7 +95,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const savedUserRaw = await AsyncStorage.getItem(LOCAL_USER_KEY);
           if (savedUserRaw && isMounted) {
             try {
-              setUser(JSON.parse(savedUserRaw));
+              const parsed = JSON.parse(savedUserRaw);
+              if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string' && parsed.id.trim()) {
+                setUser({
+                  uid: parsed.uid || parsed.id,
+                  id: parsed.id.trim(),
+                  email: typeof parsed.email === 'string' ? parsed.email : null,
+                  displayName: typeof parsed.displayName === 'string' ? parsed.displayName : null,
+                  photoUrl: typeof parsed.photoUrl === 'string' ? parsed.photoUrl : null,
+                  provider: parsed.provider || 'guest',
+                });
+              }
             } catch {}
           }
         }

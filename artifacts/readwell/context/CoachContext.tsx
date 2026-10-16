@@ -90,7 +90,12 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
           try {
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              setMessages(parsed);
+              const validMessages = parsed.filter(
+                m => m && typeof m === 'object' && typeof m.id === 'string' && typeof m.content === 'string'
+              );
+              if (validMessages.length > 0) {
+                setMessages(validMessages);
+              }
             }
           } catch {
             // ignore

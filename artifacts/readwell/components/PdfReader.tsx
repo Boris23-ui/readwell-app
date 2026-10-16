@@ -156,10 +156,11 @@ export default function PdfReader({ book }: { book: Book }) {
   const scrollRef = useRef<ScrollView>(null);
   const finishAnim = useRef(new Animated.Value(0)).current;
 
-  const segmentIndex = book.currentSegmentIndex;
-  const segment = book.segments[segmentIndex];
-  const totalSegments = book.segments.length;
-  const allPages = book.pages ?? [];
+  const segmentIndex = Math.max(0, book.currentSegmentIndex || 0);
+  const segments = Array.isArray(book.segments) ? book.segments : [];
+  const segment = segments[segmentIndex];
+  const totalSegments = segments.length;
+  const allPages = Array.isArray(book.pages) ? book.pages : [];
   const totalPages = allPages.length;
 
   const sectionPages = segment
@@ -210,14 +211,25 @@ export default function PdfReader({ book }: { book: Book }) {
   }, [sessionStart]);
 
   if (!segment) {
+    const handleRestartBook = async () => {
+      await updateBook(book.id, { currentSegmentIndex: 0, status: 'in_progress' });
+    };
+
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.foreground }]}>You've finished this book!</Text>
+        <Text style={[styles.errorText, { color: colors.foreground }]}>
+          {totalSegments > 0 && segmentIndex >= totalSegments ? "You've finished this book!" : "Unable to load this section."}
+        </Text>
+        <TouchableOpacity
+          onPress={handleRestartBook}
+          style={[styles.primaryBtn, { backgroundColor: colors.primary, marginBottom: 12 }]}
+        >
+          <Text style={styles.primaryBtnText}>Read from Beginning</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => router.replace('/(tabs)')}
-          style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
         >
-          <Text style={styles.primaryBtnText}>Back to Home</Text>
+          <Text style={[styles.primaryBtnText, { color: colors.mutedForeground }]}>Back to Home</Text>
         </TouchableOpacity>
       </View>
     );
@@ -394,7 +406,12 @@ export default function PdfReader({ book }: { book: Book }) {
                   </View>
                 )}
                 {page.lowConfidence && (
-                  <View style={[styles.lowConfidenceBadge, { backgroundColor: `${colors.honey}30`, borderColor: colors.honeyDeep }]} pointerEvents="none">
+                  <View
+                    style={[styles.lowConfidenceBadge, { backgroundColor: `${colors.honey}30`, borderColor: colors.honeyDeep }]}
+                    pointerEvents="none"
+                    accessibilityRole="alert"
+                    accessibilityLabel="Blurry scan: quiz questions may be limited"
+                  >
                     <Feather name="alert-triangle" size={12} color={colors.honeyDeep} />
                     <Text style={[styles.lowConfidenceBadgeText, { color: colors.honeyDeep }]}>
                       Blurry scan — quiz questions may be limited

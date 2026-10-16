@@ -31,10 +31,13 @@ const RETRYABLE_QUIZ_ERROR_CODES = new Set([
   'GEMINI_INVALID_RESPONSE',
   'GEMINI_UNAVAILABLE',
   'QUIZ_GENERATION_FAILED',
+  'NETWORK_ERROR',
 ]);
 
 function getQuizErrorMessage(code?: string): string {
   switch (code) {
+    case 'NETWORK_ERROR':
+      return "Can't reach the quiz service. Check your internet connection and try again.";
     case 'TEXT_TOO_LONG':
       return 'This reading section is too long for a quiz. Try a shorter section.';
     case 'QUIZ_RATE_LIMITED':
