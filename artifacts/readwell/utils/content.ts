@@ -1,38 +1,364 @@
 import { Book, PdfPage, Segment } from '@/types';
 
-export function splitIntoParagraphs(text: string): string[] {
-  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+export type BookBlockType =
+  | 'heading'
+  | 'subheading'
+  | 'callout'
+  | 'quote'
+  | 'list-item'
+  | 'divider'
+  | 'paragraph';
+
+export type CalloutKind = 'definition' | 'theorem' | 'example' | 'note';
+
+export interface BookBlock {
+  id: string;
+  type: BookBlockType;
+  text: string;
+  /** Label for callouts, e.g. "DEFINITION 1", "THEOREM", "EXAMPLE 2" */
+  label?: string;
+  calloutKind?: CalloutKind;
+  /** Bullet or number marker for list items, e.g. "1.", "•", "(a)" */
+  marker?: string;
+  /** Optional quote attribution */
+  attribution?: string;
+  /** True for the first body paragraph of a section or right after a heading */
+  isOpeningParagraph?: boolean;
+  /** 1-based sequential paragraph index among prose paragraphs in the section */
+  paragraphNumber?: number;
+}
+
+const ABBREVIATIONS_REGEX = /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Fig|Figs|Eq|Eqs|Ch|Sec|Vol|No|vs|etc|al|e\.g|i\.e|U\.S|D\.C)\.$/i;
+
+const SCENE_BREAK_REGEX = /^\s*(?:\*\s*\*\s*\*+|-{3,}|—{2,}|•\s*•\s*•+|❖+|❦+|✦(?:\s*✦)*)\s*$/;
+
+const MAJOR_HEADING_REGEX =
+  /^(?:(?:CHAPTER|PART|UNIT|MODULE|APPENDIX|BOOK)\s+(?:[IVXLCDM]+|\d+)(?:\s*[:.—–-]\s*|\s+).{0,80}|(?:CHAPTER|PART|PROLOGUE|EPILOGUE|INTRODUCTION|PREFACE|FOREWORD|AFTERWORD)(?:\s+[IVXLCDM\d]+)?)$/i;
+
+const NUMBERED_SUBHEADING_REGEX =
+  /^(\d{1,2}(?:\.\d{1,2}){1,3})\s+([A-Z][A-Za-z0-9\s,&/():'’-]{2,65})$/;
+
+const CALLOUT_PREFIX_REGEX =
+  /^((?:DEFINITION|THEOREM|LEMMA|COROLLARY|PROPOSITION|AXIOM|EXAMPLE|EXERCISE|PROOF|REMARK|NOTE|KEY\s+CONCEPT|KEY\s+TAKEAWAY|PRINCIPLE)(?:(?:\s+\d+(?:\.\d+)*(?:\s*\([^)]{1,45}\))?\s*(?:[:.—–-]\s*|\s+))|(?:\s*\([^)]{1,45}\))?\s*[:.—–-]\s*))(.+)$/i;
+
+const LIST_ITEM_PREFIX_REGEX =
+  /^(?:([•●▪▸*-]|\d{1,2}\.|[a-z]\)|\([a-z0-9]{1,3}\)|[ivx]{1,4}\.)\s+)(.+)$/i;
+
+const STANDALONE_PAGE_NUMBER_REGEX =
+  /^\s*(?:page\s+\d+(?:\s+of\s+\d+)?|[-–—]?\s*\d{1,4}\s*[-–—]?)\s*$/i;
+
+/**
+ * Cleans raw PDF/OCR text artifacts: normalizes newlines, heals hyphenated line wraps,
+ * and removes isolated running page number lines.
+ */
+export function cleanRawBookText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\f/g, '\n\n')
+    // Heal word hyphenation across line wraps (e.g. "compre-\nhension" -> "comprehension")
+    .replace(/([a-zA-Z]{2,})-[ \t]*\n[ \t]*([a-z]{2,})/g, '$1$2')
+    .split('\n')
+    .filter(line => !STANDALONE_PAGE_NUMBER_REGEX.test(line))
+    .join('\n')
+    .trim();
+}
+
+/**
+ * Splits a block of prose into individual sentences while respecting common abbreviations
+ * and decimal numbers.
+ */
+export function splitIntoSentences(text: string): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim();
   if (!normalized) return [];
 
-  // 1. Standard blank-line separated paragraphs
-  const byBlankLines = normalized
-    .split(/\n{2,}/)
-    .map(p => p.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim())
-    .filter(p => p.split(/\s+/).length >= 8);
+  const rawParts = normalized.split(/(?<=[.!?]["”’)]?)\s+(?=[A-Z0-9"“‘(])/);
+  const sentences: string[] = [];
 
-  if (byBlankLines.length >= 2) {
-    return byBlankLines;
+  for (const part of rawParts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    if (
+      sentences.length > 0 &&
+      ABBREVIATIONS_REGEX.test(sentences[sentences.length - 1])
+    ) {
+      sentences[sentences.length - 1] = `${sentences[sentences.length - 1]} ${trimmed}`;
+    } else {
+      sentences.push(trimmed);
+    }
   }
 
-  // 2. Fallback: single-newline separated lines (common when copying from PDFs/articles)
+  return sentences;
+}
+
+/**
+ * Breaks a single flattened string (such as a full PDF page where single newlines
+ * were previously collapsed into spaces) into distinct structural lines and
+ * human-sized prose paragraphs (~45-80 words, 2-3 sentences each).
+ */
+export function expandFlattenedBlock(rawBlock: string): string[] {
+  let block = rawBlock.replace(/\s+/g, ' ').trim();
+  if (!block) return [];
+
+  // 1. Separate leading CHAPTER / PART heading glued to a section heading or opening sentence
+  // e.g. "CHAPTER 1 The Foundations: Logic and Proofs 1.1 Propositional Logic The rules..."
+  block = block.replace(
+    /^((?:CHAPTER|PART|UNIT|MODULE)\s+(?:[IVXLCDM]+|\d+)\s+[A-Z][^.!?\n]{2,60}?)\s+(?=\d{1,2}\.\d{1,2}\s+[A-Z])/i,
+    '$1\n',
+  );
+
+  // 2. Separate leading numbered section subheading glued to the first prose sentence
+  // e.g. "1.1 Propositional Logic The rules of logic give..."
+  block = block.replace(
+    /(^|\n)(\d{1,2}(?:\.\d{1,2}){1,2}\s+[A-Z][A-Za-z0-9\s,&/-]{2,48}?)\s+(?=(?:The|A|An|In|We|To|For|When|If|Let|Suppose|Consider|Because|Since|Every|All|Many|Most|This|These|It|As|By|From|On|With|One|Two|Recall|Note|Here|There|Although|While|However|Modern|Psychologists)\b)/g,
+    '$1$2\n',
+  );
+
+  // 3. Separate embedded mid-block numbered section headings after a period
+  block = block.replace(
+    /(?<=[.!?])\s+(?=\d{1,2}\.\d{1,2}(?:\.\d{1,2})?\s+[A-Z][a-z]+)/g,
+    '\n',
+  );
+
+  // 4. Separate embedded CALLOUT headers (DEFINITION 1, Theorem 2:, Example 1.1, Proof:, etc.)
+  block = block.replace(
+    /(?<=[.!?])\s+(?=(?:DEFINITION|THEOREM|LEMMA|COROLLARY|PROPOSITION|AXIOM|EXAMPLE|EXERCISE|PROOF|REMARK|Definition|Theorem|Lemma|Corollary|Proposition|Axiom|Example|Exercise|Proof|Remark)(?:\s+\d+(?:\.\d+)*|\s*:))/g,
+    '\n',
+  );
+
+  // 5. Separate inline numbered or bulleted list items following sentence punctuation
+  // e.g. "...are propositions. 1. Washington, D.C., is... 2. Toronto is..."
+  block = block.replace(
+    /(?<=[.!?:])\s+(?=(?:\d{1,2}\.\s+[A-Z0-9(]|\([a-z0-9]\)\s+[A-Z0-9]|[•●▪]\s+))/g,
+    '\n',
+  );
+
+  const subLines = block
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const output: string[] = [];
+
+  for (const line of subLines) {
+    // Keep headings, scene breaks, and list items intact as their own units
+    if (
+      SCENE_BREAK_REGEX.test(line) ||
+      MAJOR_HEADING_REGEX.test(line) ||
+      NUMBERED_SUBHEADING_REGEX.test(line) ||
+      LIST_ITEM_PREFIX_REGEX.test(line)
+    ) {
+      output.push(line);
+      continue;
+    }
+
+    // If a line starts with a callout (DEFINITION 1, THEOREM 2, EXAMPLE 1, NOTE:, etc.)
+    // and has trailing body prose attached from a flattened PDF page, separate the
+    // concise callout statement from the subsequent explanatory prose paragraphs.
+    const words = line.split(/\s+/).filter(Boolean);
+    if (CALLOUT_PREFIX_REGEX.test(line)) {
+      const calloutSentences = splitIntoSentences(line);
+      if (calloutSentences.length >= 2 && words.length > 32) {
+        const firstSentenceWords = calloutSentences[0].split(/\s+/).length;
+        const calloutSentenceCount = firstSentenceWords < 14 && calloutSentences.length >= 3 ? 2 : 1;
+        const calloutUnit = calloutSentences.slice(0, calloutSentenceCount).join(' ');
+        const trailingProse = calloutSentences.slice(calloutSentenceCount).join(' ');
+        output.push(calloutUnit);
+        if (trailingProse.trim()) {
+          output.push(...expandFlattenedBlock(trailingProse));
+        }
+        continue;
+      }
+      output.push(line);
+      continue;
+    }
+
+    if (words.length <= 85) {
+      output.push(line);
+      continue;
+    }
+
+    const sentences = splitIntoSentences(line);
+    if (sentences.length < 2) {
+      output.push(line);
+      continue;
+    }
+
+    const targetPerPara = Math.max(2, Math.min(3, Math.ceil(sentences.length / Math.ceil(words.length / 65))));
+    let current: string[] = [];
+    let currentWords = 0;
+
+    for (const sentence of sentences) {
+      current.push(sentence);
+      currentWords += sentence.split(/\s+/).length;
+      if (current.length >= targetPerPara || currentWords >= 68) {
+        output.push(current.join(' '));
+        current = [];
+        currentWords = 0;
+      }
+    }
+
+    if (current.length > 0) {
+      if (output.length > 0 && currentWords < 15 && !MAJOR_HEADING_REGEX.test(output[output.length - 1])) {
+        output[output.length - 1] = `${output[output.length - 1]} ${current.join(' ')}`;
+      } else {
+        output.push(current.join(' '));
+      }
+    }
+  }
+
+  return output;
+}
+
+/**
+ * Parses lines within a blank-line-separated chunk so that PDF pages containing
+ * single-newline paragraph breaks, headings, definitions, or lists are not
+ * flattened into a single run-on wall of text.
+ */
+function extractParagraphsFromChunk(chunk: string): string[] {
+  const lines = chunk
+    .split(/\n+/)
+    .map(l => l.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return [];
+  if (lines.length === 1) {
+    return expandFlattenedBlock(lines[0]);
+  }
+
+  // Check if the non-structural lines in the chunk are already distinct full-sentence
+  // paragraphs separated by single newlines (even if the chunk starts with a short heading).
+  const isStructuralUnit = (l: string) =>
+    SCENE_BREAK_REGEX.test(l) ||
+    MAJOR_HEADING_REGEX.test(l) ||
+    NUMBERED_SUBHEADING_REGEX.test(l) ||
+    CALLOUT_PREFIX_REGEX.test(l) ||
+    LIST_ITEM_PREFIX_REGEX.test(l);
+
+  const proseLines = lines.filter(l => !isStructuralUnit(l));
+  const longProseLines = proseLines.filter(l => l.split(/\s+/).length >= 8);
+  const terminalProseLines = longProseLines.filter(l => /[.!?”’"')]$/.test(l));
+  const hasUnwrappedLineWidth = proseLines.some(l => l.length >= 75);
+
+  if (
+    proseLines.length >= 2 &&
+    longProseLines.length === proseLines.length &&
+    terminalProseLines.length >= Math.ceil(proseLines.length * 0.7) &&
+    (hasUnwrappedLineWidth || terminalProseLines.length === proseLines.length)
+  ) {
+    return lines.flatMap(l => expandFlattenedBlock(l));
+  }
+
+  // Otherwise, reconstruct paragraphs from hard-wrapped PDF lines while respecting
+  // headings, callouts, list items, and sentence-ending paragraph breaks.
+  const paragraphs: string[] = [];
+  let buffer: string[] = [];
+  let bufferWords = 0;
+
+  const flushBuffer = () => {
+    if (buffer.length > 0) {
+      const joined = buffer.join(' ').replace(/\s+/g, ' ').trim();
+      if (joined) {
+        paragraphs.push(...expandFlattenedBlock(joined));
+      }
+      buffer = [];
+      bufferWords = 0;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineWords = line.split(/\s+/).length;
+    const isStructuralLine =
+      SCENE_BREAK_REGEX.test(line) ||
+      MAJOR_HEADING_REGEX.test(line) ||
+      NUMBERED_SUBHEADING_REGEX.test(line) ||
+      CALLOUT_PREFIX_REGEX.test(line) ||
+      LIST_ITEM_PREFIX_REGEX.test(line);
+
+    if (isStructuralLine) {
+      flushBuffer();
+      if (
+        MAJOR_HEADING_REGEX.test(line) ||
+        NUMBERED_SUBHEADING_REGEX.test(line) ||
+        SCENE_BREAK_REGEX.test(line)
+      ) {
+        paragraphs.push(line);
+      } else {
+        buffer.push(line);
+        bufferWords += lineWords;
+      }
+      continue;
+    }
+
+    buffer.push(line);
+    bufferWords += lineWords;
+
+    const endsWithSentence = /[.!?]["”’)]?$/.test(line);
+    const nextLine = lines[i + 1];
+    const nextStartsNewSentence = nextLine ? /^[A-Z0-9"“‘(]/.test(nextLine) : false;
+    const isShortEndingLine = line.length < 58 && endsWithSentence;
+    const isUnwrappedCompleteParagraphLine = line.length >= 80 && lineWords >= 12 && endsWithSentence;
+
+    if (
+      endsWithSentence &&
+      nextStartsNewSentence &&
+      (bufferWords >= 45 || isShortEndingLine || isUnwrappedCompleteParagraphLine)
+    ) {
+      flushBuffer();
+    }
+  }
+
+  flushBuffer();
+  return paragraphs;
+}
+
+export function splitIntoParagraphs(text: string): string[] {
+  const normalized = cleanRawBookText(text);
+  if (!normalized) return [];
+
+  // 1. Split by blank lines first, then intelligently unpack any multi-paragraph PDF page chunks
+  const rawChunks = normalized.split(/\n{2,}/).map(c => c.trim()).filter(Boolean);
+
+  if (rawChunks.length >= 2) {
+    const unpacked = rawChunks
+      .flatMap(chunk => extractParagraphsFromChunk(chunk))
+      .filter(p => p.split(/\s+/).length >= 8 || MAJOR_HEADING_REGEX.test(p) || NUMBERED_SUBHEADING_REGEX.test(p));
+
+    if (unpacked.length >= 2) {
+      return unpacked;
+    }
+  }
+
+  // 2. Fallback: single-newline separated lines or single multi-line chunk
+  if (rawChunks.length === 1) {
+    const fromSingleChunk = extractParagraphsFromChunk(rawChunks[0]).filter(
+      p => p.split(/\s+/).length >= 8 || MAJOR_HEADING_REGEX.test(p) || NUMBERED_SUBHEADING_REGEX.test(p),
+    );
+    if (fromSingleChunk.length >= 2) {
+      return fromSingleChunk;
+    }
+  }
+
   const bySingleLines = normalized
     .split(/\n+/)
     .map(p => p.replace(/\s+/g, ' ').trim())
     .filter(p => p.split(/\s+/).length >= 8);
 
   if (bySingleLines.length >= 2) {
-    return bySingleLines;
+    return bySingleLines.flatMap(line => expandFlattenedBlock(line));
   }
 
   // 3. Fallback: single long wall of prose — split cleanly at sentence boundaries
   const singleBlock = normalized.replace(/\s+/g, ' ').trim();
   const totalWords = singleBlock.split(/\s+/).filter(Boolean).length;
   if (totalWords >= 50) {
-    const sentences = singleBlock
-      .split(/(?<=[.!?])\s+/)
-      .map(s => s.trim())
-      .filter(Boolean);
+    const expanded = expandFlattenedBlock(singleBlock);
+    if (expanded.length >= 2) {
+      return expanded;
+    }
 
+    const sentences = splitIntoSentences(singleBlock);
     if (sentences.length >= 2) {
       const targetPerPara = Math.max(2, Math.min(4, Math.ceil(sentences.length / 3)));
       const chunks: string[] = [];
@@ -62,7 +388,254 @@ export function splitIntoParagraphs(text: string): string[] {
     }
   }
 
+  const byBlankLines = rawChunks
+    .map(p => p.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(p => p.split(/\s+/).length >= 8);
+
   return byBlankLines.length > 0 ? byBlankLines : bySingleLines;
+}
+
+/**
+ * Extracts a classic book Drop Cap letter and opening 2-3 lead-in words
+ * from the first paragraph of a section.
+ */
+export function extractParagraphLeadIn(text: string): {
+  dropCap: string;
+  leadWords: string;
+  rest: string;
+} {
+  const trimmed = text.trim();
+  // Match optional opening quote + first alphanumeric letter + rest of text
+  const match = trimmed.match(/^([“"‘'()]?[A-Za-z])(.*)$/s);
+  if (!match) {
+    return { dropCap: '', leadWords: '', rest: trimmed };
+  }
+
+  const dropCap = match[1];
+  const remainder = match[2];
+  const hasLeadingSpace = /^\s/.test(remainder);
+  const tokens = remainder.trim().split(/\s+/).filter(Boolean);
+
+  if (tokens.length === 0) {
+    return { dropCap, leadWords: '', rest: '' };
+  }
+
+  const leadWordCount = Math.min(3, tokens.length);
+  const leadWords = `${hasLeadingSpace ? ' ' : ''}${tokens.slice(0, leadWordCount).join(' ')}`;
+  const restTokens = tokens.slice(leadWordCount);
+  const rest = restTokens.length > 0 ? ` ${restTokens.join(' ')}` : '';
+
+  return {
+    dropCap,
+    leadWords,
+    rest,
+  };
+}
+
+function classifyCalloutKind(rawType: string): CalloutKind {
+  const upper = rawType.toUpperCase();
+  if (upper.startsWith('DEF') || upper.startsWith('AXIOM') || upper.startsWith('PRINCIPLE')) {
+    return 'definition';
+  }
+  if (
+    upper.startsWith('THEOREM') ||
+    upper.startsWith('LEMMA') ||
+    upper.startsWith('COROLLARY') ||
+    upper.startsWith('PROPOSITION') ||
+    upper.startsWith('PROOF')
+  ) {
+    return 'theorem';
+  }
+  if (upper.startsWith('EXAMPLE') || upper.startsWith('EXERCISE')) {
+    return 'example';
+  }
+  return 'note';
+}
+
+/**
+ * Converts a segment's raw paragraph strings into structured, book-like blocks
+ * (headings, subheadings, callouts, quotes, list items, section dividers, and
+ * numbered/indented paragraphs).
+ *
+ * Works seamlessly on both newly imported books AND legacy saved books whose
+ * segments contain unsplit PDF page walls.
+ */
+export function formatSegmentForBookReader(rawParagraphs: string[]): BookBlock[] {
+  if (!Array.isArray(rawParagraphs) || rawParagraphs.length === 0) return [];
+
+  // Step 1: Expand any flattened / oversized blocks into clean logical units
+  const expandedUnits: string[] = [];
+  for (const raw of rawParagraphs) {
+    if (typeof raw !== 'string') continue;
+    const cleaned = cleanRawBookText(raw);
+    if (!cleaned) continue;
+
+    // If the string contains newlines, process chunk-by-chunk
+    const subChunks = cleaned.split(/\n{2,}/).map(c => c.trim()).filter(Boolean);
+    for (const chunk of subChunks) {
+      expandedUnits.push(...extractParagraphsFromChunk(chunk));
+    }
+  }
+
+  if (expandedUnits.length === 0) return [];
+
+  // Step 2: Classify each unit into a rich BookBlock
+  const preliminaryBlocks: Omit<BookBlock, 'id'>[] = [];
+
+  for (const unit of expandedUnits) {
+    const trimmed = unit.trim();
+    if (!trimmed) continue;
+
+    // 1. Explicit scene break
+    if (SCENE_BREAK_REGEX.test(trimmed)) {
+      preliminaryBlocks.push({ type: 'divider', text: '✦   ✦   ✦' });
+      continue;
+    }
+
+    // 2. Major Chapter / Part heading
+    if (MAJOR_HEADING_REGEX.test(trimmed)) {
+      preliminaryBlocks.push({ type: 'heading', text: trimmed });
+      continue;
+    }
+
+    // 3. Numbered section subheading (e.g. "1.1 Propositional Logic")
+    if (NUMBERED_SUBHEADING_REGEX.test(trimmed)) {
+      preliminaryBlocks.push({ type: 'subheading', text: trimmed });
+      continue;
+    }
+
+    // 4. Academic / Non-fiction Callout (Definition, Theorem, Example, Proof, Note, etc.)
+    const calloutMatch = trimmed.match(CALLOUT_PREFIX_REGEX);
+    if (calloutMatch) {
+      const rawLabel = calloutMatch[1]
+        .replace(/\s*[:.—–-]+\s*$/, '')
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+      const bodyText = calloutMatch[2].trim();
+      preliminaryBlocks.push({
+        type: 'callout',
+        label: rawLabel,
+        calloutKind: classifyCalloutKind(rawLabel),
+        text: bodyText,
+      });
+      continue;
+    }
+
+    // 5. List item (numbered, lettered, or bulleted)
+    const listMatch = trimmed.match(LIST_ITEM_PREFIX_REGEX);
+    if (listMatch) {
+      preliminaryBlocks.push({
+        type: 'list-item',
+        marker: listMatch[1],
+        text: listMatch[2].trim(),
+      });
+      continue;
+    }
+
+    // 6. Blockquote (starts with ">" or wrapped entirely in quotes with attribution)
+    if (trimmed.startsWith('>')) {
+      const quoteBody = trimmed.replace(/^>\s*/, '').trim();
+      preliminaryBlocks.push({
+        type: 'quote',
+        text: quoteBody,
+      });
+      continue;
+    }
+    const quoteWithAttribution = trimmed.match(/^[“"](.+)[”"]\s*(?:[—–-]{1,2}\s*(.+))$/);
+    if (quoteWithAttribution) {
+      preliminaryBlocks.push({
+        type: 'quote',
+        text: quoteWithAttribution[1].trim(),
+        attribution: quoteWithAttribution[2].trim(),
+      });
+      continue;
+    }
+
+    // 7. Short title-like heading without sentence punctuation or dialogue quotes (e.g. "Propositional Equivalences")
+    const wordCount = trimmed.split(/\s+/).length;
+    if (
+      wordCount >= 2 &&
+      wordCount <= 8 &&
+      trimmed.length <= 64 &&
+      !/[.!?,;:)”"’'\]]$/.test(trimmed) &&
+      !/[.!?]/.test(trimmed) &&
+      !/["“”]/.test(trimmed) &&
+      /^[A-Z0-9]/.test(trimmed)
+    ) {
+      preliminaryBlocks.push({ type: 'subheading', text: trimmed });
+      continue;
+    }
+
+    // 8. Standard book paragraph
+    preliminaryBlocks.push({
+      type: 'paragraph',
+      text: trimmed,
+    });
+  }
+
+  // Step 3: Assign paragraph numbers, opening-paragraph drop-cap flags,
+  // and insert subtle ornamental section dividers between long runs of prose paragraphs
+  const finalBlocks: BookBlock[] = [];
+  let proseCount = 0;
+  let consecutiveProseRun = 0;
+  let expectOpeningParagraph = true;
+  const totalProseParagraphs = preliminaryBlocks.filter(b => b.type === 'paragraph').length;
+
+  for (let i = 0; i < preliminaryBlocks.length; i++) {
+    const block = preliminaryBlocks[i];
+
+    if (block.type === 'heading' || block.type === 'subheading' || block.type === 'divider') {
+      consecutiveProseRun = 0;
+      if (block.type === 'heading') {
+        expectOpeningParagraph = true;
+      }
+      finalBlocks.push({
+        ...block,
+        id: `block-${finalBlocks.length}`,
+      });
+      continue;
+    }
+
+    if (block.type === 'paragraph') {
+      // Insert a classic editorial section divider after every 3 consecutive prose paragraphs
+      // when there are still at least 2 prose paragraphs remaining in the section.
+      const remainingProse = totalProseParagraphs - proseCount;
+      if (consecutiveProseRun >= 3 && remainingProse >= 2) {
+        finalBlocks.push({
+          id: `block-${finalBlocks.length}`,
+          type: 'divider',
+          text: '✦   ✦   ✦',
+        });
+        consecutiveProseRun = 0;
+      }
+
+      proseCount += 1;
+      consecutiveProseRun += 1;
+      const isOpening = expectOpeningParagraph;
+      expectOpeningParagraph = false;
+
+      finalBlocks.push({
+        ...block,
+        id: `block-${finalBlocks.length}`,
+        isOpeningParagraph: isOpening,
+        paragraphNumber: proseCount,
+      });
+      continue;
+    }
+
+    // Callouts, quotes, and list items reset the consecutive prose counter without forcing a new drop cap
+    if (block.type === 'callout' || block.type === 'quote') {
+      consecutiveProseRun = 0;
+    }
+
+    finalBlocks.push({
+      ...block,
+      id: `block-${finalBlocks.length}`,
+    });
+  }
+
+  return finalBlocks;
 }
 
 export const STARTER_BOOK_ID = 'starter-art-of-deep-reading';
@@ -123,10 +696,14 @@ export function buildPdfSegments(pages: PdfPage[], pagesPerSegment = 3): Segment
       .map(p => p.text)
       .filter(t => t && t.trim().length > 0)
       .join('\n\n');
-    const paragraphs = combinedText
-      .split(/\n{2,}/)
-      .map(p => p.replace(/\n/g, ' ').trim())
-      .filter(p => p.length > 0);
+    const smartParagraphs = splitIntoParagraphs(combinedText);
+    const paragraphs =
+      smartParagraphs.length > 0
+        ? smartParagraphs
+        : combinedText
+            .split(/\n{2,}/)
+            .map(p => p.replace(/\n/g, ' ').trim())
+            .filter(p => p.length > 0);
     segments.push({
       index: segments.length,
       paragraphs: paragraphs.length > 0 ? paragraphs : [' '],

@@ -5,6 +5,72 @@ import { aiGateway } from "../lib/aiGateway";
 
 const router = Router();
 
+export function renderPageWithParagraphs(pageData: any): Promise<string> {
+  return pageData
+    .getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
+    .then((textContent: any) => {
+      let lastY: number | null = null;
+      let lastEndX: number | null = null;
+      let lastHeight = 12;
+      let prevLineStartX: number | null = null;
+      let currentLineStartX: number | null = null;
+      const items: Array<{ str: string; x: number; y: number; w: number; h: number }> = [];
+
+      for (const item of textContent.items || []) {
+        const str = typeof item.str === "string" ? item.str : "";
+        if (!str) continue;
+        const x = Array.isArray(item.transform) ? Number(item.transform[4]) || 0 : 0;
+        const y = Array.isArray(item.transform) ? Number(item.transform[5]) || 0 : 0;
+        const w = Number(item.width) || 0;
+        const h = Number(item.height) || Math.abs(Number(item.transform?.[3])) || 12;
+        items.push({ str, x, y, w, h });
+      }
+
+      let pageText = "";
+      for (const item of items) {
+        if (lastY === null) {
+          pageText += item.str;
+          currentLineStartX = item.x;
+        } else {
+          const dy = Math.abs(item.y - lastY);
+          const refHeight = Math.max(8, Math.min(24, (lastHeight + item.h) / 2));
+          if (dy < 2) {
+            // Same line: only insert a space if there is an actual horizontal word gap
+            // so kerned glyph fragments of the same word ("Pro" + "positional") stay joined.
+            const hasHorizontalWordGap =
+              lastEndX !== null && item.x - lastEndX > Math.max(1.5, refHeight * 0.16);
+            const needsSpace =
+              hasHorizontalWordGap &&
+              pageText.length > 0 &&
+              !/\s$/.test(pageText) &&
+              !/^\s/.test(item.str);
+            pageText += (needsSpace ? " " : "") + item.str;
+          } else {
+            prevLineStartX = currentLineStartX;
+            currentLineStartX = item.x;
+            const isIndentedNewParagraph =
+              prevLineStartX !== null &&
+              item.x - prevLineStartX >= 10 &&
+              item.x - prevLineStartX <= 60 &&
+              /[.!?:"”’)]$/.test(pageText.trimEnd());
+
+            if (dy > refHeight * 1.48 || isIndentedNewParagraph) {
+              // Paragraph break (larger vertical gap or indented line after sentence end)
+              pageText += "\n\n" + item.str;
+            } else {
+              // Normal line wrap within a paragraph
+              pageText += "\n" + item.str;
+            }
+          }
+        }
+        lastY = item.y;
+        lastHeight = item.h;
+        lastEndX = item.w > 0 ? item.x + item.w : null;
+      }
+      return pageText + "\n\n";
+    });
+}
+
 // Keep files in memory (no disk I/O needed)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -35,8 +101,14 @@ router.post("/extract-text", upload.single("file"), async (req, res) => {
     if (mimetype === "application/pdf" || originalname.toLowerCase().endsWith(".pdf")) {
       // Dynamically import pdf-parse (CJS module, avoids ESM issues)
       const pdfParse = (await import("pdf-parse")).default;
-      const data = await pdfParse(buffer);
-      text = data.text;
+
+      try {
+        const data = await pdfParse(buffer, { pagerender: renderPageWithParagraphs });
+        text = data.text;
+      } catch {
+        const fallbackData = await pdfParse(buffer);
+        text = fallbackData.text;
+      }
     } else if (mimetype === "text/html" || /\.(html|htm)$/i.test(originalname)) {
       const rawHtml = buffer.toString("utf-8");
       // Strip script and style blocks

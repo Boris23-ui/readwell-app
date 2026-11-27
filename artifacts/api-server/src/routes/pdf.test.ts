@@ -365,3 +365,45 @@ describe("POST /api/render-pdf — server-side orphan cleanup", () => {
     expect(res.body).toHaveProperty("error");
   });
 });
+
+describe("renderPageWithParagraphs (/extract-text PDF pagerender)", () => {
+  it("joins kerned glyph fragments of the same word without bogus spaces while spacing distinct words", async () => {
+    const { renderPageWithParagraphs } = await import("./extract");
+    const mockPageData = {
+      getTextContent: () =>
+        Promise.resolve({
+          items: [
+            { str: "Pro", transform: [12, 0, 0, 12, 72, 700], width: 18, height: 12 },
+            { str: "positional", transform: [12, 0, 0, 12, 90, 700], width: 52, height: 12 },
+            { str: "Logic", transform: [12, 0, 0, 12, 148, 700], width: 30, height: 12 },
+          ],
+        }),
+    };
+
+    const output = await renderPageWithParagraphs(mockPageData);
+    expect(output.trim()).toBe("Propositional Logic");
+  });
+
+  it("emits paragraph breaks on vertical gaps or indented lines without being fooled by margin notes", async () => {
+    const { renderPageWithParagraphs } = await import("./extract");
+    const mockPageData = {
+      getTextContent: () =>
+        Promise.resolve({
+          items: [
+            // Stray left-margin note at x = 15
+            { str: "[1]", transform: [10, 0, 0, 10, 15, 730], width: 12, height: 10 },
+            // Paragraph 1: two wrapped lines at body margin x = 72 (dy = 14 -> normal line wrap)
+            { str: "First line of paragraph one ends with a period.", transform: [12, 0, 0, 12, 72, 700], width: 240, height: 12 },
+            { str: "Second line of paragraph one continues at margin.", transform: [12, 0, 0, 12, 72, 686], width: 250, height: 12 },
+            // Paragraph 2: indented first line at x = 90 after sentence end (dy = 14, dx = +18 -> paragraph break)
+            { str: "Indented first line of paragraph two.", transform: [12, 0, 0, 12, 90, 672], width: 200, height: 12 },
+          ],
+        }),
+    };
+
+    const output = await renderPageWithParagraphs(mockPageData);
+    expect(output).toContain(
+      "First line of paragraph one ends with a period.\nSecond line of paragraph one continues at margin.\n\nIndented first line of paragraph two.",
+    );
+  });
+});

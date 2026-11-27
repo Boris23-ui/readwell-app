@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,10 +22,18 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import PdfReader from '@/components/PdfReader';
 import { CoachChatView } from '@/components/CoachChatView';
+import {
+  BookPageView,
+  BookLayoutMode,
+  PAPER_PALETTES,
+  PaperTheme,
+} from '@/components/BookPageView';
 import { simplifyText } from '@/utils/api';
+import { splitIntoParagraphs } from '@/utils/content';
 
 const READER_PREFS_KEY = '@readwell/reader-prefs';
 const FONT_SIZES = [15, 17, 19, 22] as const;
+const PAPER_THEMES: PaperTheme[] = ['paper', 'sepia', 'night'];
 
 export default function ReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
@@ -41,6 +49,8 @@ export default function ReaderScreen() {
   const [showTypographyBar, setShowTypographyBar] = useState(false);
   const [fontSizeIdx, setFontSizeIdx] = useState(1); // default 17px
   const [useSerif, setUseSerif] = useState(true); // default Newsreader serif for deep reading
+  const [paperTheme, setPaperTheme] = useState<PaperTheme>('paper');
+  const [layoutMode, setLayoutMode] = useState<BookLayoutMode>('classic');
   const [isSimplifying, setIsSimplifying] = useState(false);
   const [simplifiedText, setSimplifiedText] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -59,14 +69,30 @@ export default function ReaderScreen() {
         if (typeof parsed.useSerif === 'boolean') {
           setUseSerif(parsed.useSerif);
         }
+        if (parsed.paperTheme === 'paper' || parsed.paperTheme === 'sepia' || parsed.paperTheme === 'night') {
+          setPaperTheme(parsed.paperTheme);
+        }
+        if (parsed.layoutMode === 'classic' || parsed.layoutMode === 'separated') {
+          setLayoutMode(parsed.layoutMode);
+        }
       })
       .catch(() => { });
   }, []);
 
-  const persistReaderPrefs = (nextSizeIdx: number, nextSerif: boolean) => {
+  const persistReaderPrefs = (
+    nextSizeIdx: number,
+    nextSerif: boolean,
+    nextTheme: PaperTheme = paperTheme,
+    nextLayout: BookLayoutMode = layoutMode,
+  ) => {
     AsyncStorage.setItem(
       READER_PREFS_KEY,
-      JSON.stringify({ fontSizeIdx: nextSizeIdx, useSerif: nextSerif }),
+      JSON.stringify({
+        fontSizeIdx: nextSizeIdx,
+        useSerif: nextSerif,
+        paperTheme: nextTheme,
+        layoutMode: nextLayout,
+      }),
     ).catch(() => { });
   };
 
@@ -223,9 +249,30 @@ export default function ReaderScreen() {
     }
   };
 
+  const handlePreviousSection = async () => {
+    if (segmentIndex <= 0) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const prevIndex = segmentIndex - 1;
+    setSimplifiedText(null);
+    setShowFinishCard(false);
+    finishAnim.setValue(0);
+    elapsedRef.current = 0;
+    setElapsed(0);
+    await updateBook(book.id, { currentSegmentIndex: prevIndex });
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+
   const fontSize = FONT_SIZES[fontSizeIdx];
   const lineHeight = Math.round(fontSize * 1.72);
-  const bodyFontFamily = useSerif ? 'Newsreader_400Regular' : 'Inter_400Regular';
+  const activePalette = PAPER_PALETTES[paperTheme] ?? PAPER_PALETTES.paper;
+
+  const displayedParagraphs = useMemo(() => {
+    if (simplifiedText) {
+      const split = splitIntoParagraphs(simplifiedText);
+      return split.length > 0 ? split : [simplifiedText];
+    }
+    return Array.isArray(segment.paragraphs) ? segment.paragraphs : [];
+  }, [simplifiedText, segment.paragraphs]);
 
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
@@ -235,19 +282,28 @@ export default function ReaderScreen() {
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: activePalette.canvasBg }]}>
       {/* Fixed header */}
-      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: topPad + 8,
+            backgroundColor: activePalette.pageBg,
+            borderBottomColor: activePalette.border,
+          },
+        ]}
+      >
         <TouchableOpacity
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={styles.headerBtn}
         >
-          <Feather name="arrow-left" size={20} color={colors.foreground} />
+          <Feather name="arrow-left" size={20} color={activePalette.ink} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text
-            style={[styles.bookTitle, { color: colors.foreground }]}
+            style={[styles.bookTitle, { color: activePalette.ink }]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
@@ -255,7 +311,7 @@ export default function ReaderScreen() {
           </Text>
           <View style={[styles.segmentBadge, { backgroundColor: `${book.coverColor}18` }]}>
             <Text style={[styles.segmentInfo, { color: book.coverColor }]}>
-              {segmentIndex + 1} / {totalSegments}
+              Page {segmentIndex + 1} of {totalSegments}
             </Text>
           </View>
         </View>
@@ -269,12 +325,12 @@ export default function ReaderScreen() {
             style={[
               styles.typeToggleBtn,
               {
-                backgroundColor: showTypographyBar ? `${colors.primary}20` : colors.muted,
-                borderColor: showTypographyBar ? colors.primary : 'transparent',
+                backgroundColor: showTypographyBar ? `${colors.primary}20` : activePalette.calloutBg,
+                borderColor: showTypographyBar ? colors.primary : activePalette.border,
               },
             ]}
           >
-            <Text style={[styles.typeToggleText, { color: showTypographyBar ? colors.primary : colors.foreground }]}>
+            <Text style={[styles.typeToggleText, { color: showTypographyBar ? colors.primary : activePalette.ink }]}>
               Aa
             </Text>
           </TouchableOpacity>
@@ -296,81 +352,194 @@ export default function ReaderScreen() {
             )}
           </TouchableOpacity>
           <View style={styles.headerTimerWrap}>
-            <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+            <Text style={[styles.timer, { color: activePalette.mutedInk }]}>{timeStr}</Text>
           </View>
         </View>
       </View>
 
-      {/* Typography controls bar */}
+      {/* Typography & Book Page Controls Drawer */}
       {showTypographyBar && (
-        <View style={[styles.typographyBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <View style={styles.typographyGroup}>
-            <TouchableOpacity
-              onPress={() => {
-                const next = Math.max(0, fontSizeIdx - 1);
-                setFontSizeIdx(next);
-                persistReaderPrefs(next, useSerif);
-              }}
-              disabled={fontSizeIdx === 0}
-              style={[styles.sizeBtn, { backgroundColor: colors.muted, opacity: fontSizeIdx === 0 ? 0.45 : 1 }]}
-            >
-              <Text style={[styles.sizeBtnText, { color: colors.foreground }]}>A-</Text>
-            </TouchableOpacity>
-            <Text style={[styles.sizeIndicator, { color: colors.mutedForeground }]}>{fontSize}px</Text>
-            <TouchableOpacity
-              onPress={() => {
-                const next = Math.min(FONT_SIZES.length - 1, fontSizeIdx + 1);
-                setFontSizeIdx(next);
-                persistReaderPrefs(next, useSerif);
-              }}
-              disabled={fontSizeIdx === FONT_SIZES.length - 1}
-              style={[styles.sizeBtn, { backgroundColor: colors.muted, opacity: fontSizeIdx === FONT_SIZES.length - 1 ? 0.45 : 1 }]}
-            >
-              <Text style={[styles.sizeBtnText, { color: colors.foreground }]}>A+</Text>
-            </TouchableOpacity>
+        <View
+          style={[
+            styles.typographyDrawer,
+            {
+              backgroundColor: activePalette.pageBg,
+              borderBottomColor: activePalette.border,
+            },
+          ]}
+        >
+          {/* Row 1: Font size & Typeface */}
+          <View style={styles.typographyRow}>
+            <View style={styles.typographyGroup}>
+              <TouchableOpacity
+                onPress={() => {
+                  const next = Math.max(0, fontSizeIdx - 1);
+                  setFontSizeIdx(next);
+                  persistReaderPrefs(next, useSerif, paperTheme, layoutMode);
+                }}
+                disabled={fontSizeIdx === 0}
+                style={[styles.sizeBtn, { backgroundColor: activePalette.calloutBg, opacity: fontSizeIdx === 0 ? 0.45 : 1 }]}
+              >
+                <Text style={[styles.sizeBtnText, { color: activePalette.ink }]}>A-</Text>
+              </TouchableOpacity>
+              <Text style={[styles.sizeIndicator, { color: activePalette.mutedInk }]}>{fontSize}px</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  const next = Math.min(FONT_SIZES.length - 1, fontSizeIdx + 1);
+                  setFontSizeIdx(next);
+                  persistReaderPrefs(next, useSerif, paperTheme, layoutMode);
+                }}
+                disabled={fontSizeIdx === FONT_SIZES.length - 1}
+                style={[styles.sizeBtn, { backgroundColor: activePalette.calloutBg, opacity: fontSizeIdx === FONT_SIZES.length - 1 ? 0.45 : 1 }]}
+              >
+                <Text style={[styles.sizeBtnText, { color: activePalette.ink }]}>A+</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.typographyGroup}>
+              <TouchableOpacity
+                onPress={() => {
+                  setUseSerif(true);
+                  persistReaderPrefs(fontSizeIdx, true, paperTheme, layoutMode);
+                }}
+                style={[
+                  styles.fontPill,
+                  {
+                    backgroundColor: useSerif ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: useSerif ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.fontPillText, { fontFamily: 'Newsreader_600SemiBold', color: useSerif ? colors.primary : activePalette.ink }]}>
+                  Book Serif
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setUseSerif(false);
+                  persistReaderPrefs(fontSizeIdx, false, paperTheme, layoutMode);
+                }}
+                style={[
+                  styles.fontPill,
+                  {
+                    backgroundColor: !useSerif ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: !useSerif ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.fontPillText, { fontFamily: 'Inter_600SemiBold', color: !useSerif ? colors.primary : activePalette.ink }]}>
+                  Clean Sans
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.typographyGroup}>
-            <TouchableOpacity
-              onPress={() => {
-                setUseSerif(true);
-                persistReaderPrefs(fontSizeIdx, true);
-              }}
-              style={[
-                styles.fontPill,
-                {
-                  backgroundColor: useSerif ? `${colors.primary}18` : colors.muted,
-                  borderColor: useSerif ? colors.primary : 'transparent',
-                },
-              ]}
-            >
-              <Text style={[styles.fontPillText, { fontFamily: 'Newsreader_600SemiBold', color: useSerif ? colors.primary : colors.foreground }]}>
-                Serif
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                setUseSerif(false);
-                persistReaderPrefs(fontSizeIdx, false);
-              }}
-              style={[
-                styles.fontPill,
-                {
-                  backgroundColor: !useSerif ? `${colors.primary}18` : colors.muted,
-                  borderColor: !useSerif ? colors.primary : 'transparent',
-                },
-              ]}
-            >
-              <Text style={[styles.fontPillText, { fontFamily: 'Inter_600SemiBold', color: !useSerif ? colors.primary : colors.foreground }]}>
-                Sans
-              </Text>
-            </TouchableOpacity>
+          {/* Row 2: Paper Theme & Paragraph Layout Style */}
+          <View style={styles.typographyRow}>
+            <View style={styles.typographyGroup}>
+              {PAPER_THEMES.map((themeKey) => {
+                const swatch = PAPER_PALETTES[themeKey];
+                const isSelected = paperTheme === themeKey;
+                return (
+                  <TouchableOpacity
+                    key={themeKey}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setPaperTheme(themeKey);
+                      persistReaderPrefs(fontSizeIdx, useSerif, themeKey, layoutMode);
+                    }}
+                    style={[
+                      styles.paperThemePill,
+                      {
+                        backgroundColor: swatch.pageBg,
+                        borderColor: isSelected ? colors.primary : swatch.border,
+                        borderWidth: isSelected ? 2 : 1,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.paperSwatchDot,
+                        { backgroundColor: swatch.ink },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.paperThemeText,
+                        { color: swatch.ink },
+                      ]}
+                    >
+                      {swatch.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.typographyGroup}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setLayoutMode('classic');
+                  persistReaderPrefs(fontSizeIdx, useSerif, paperTheme, 'classic');
+                }}
+                style={[
+                  styles.layoutModePill,
+                  {
+                    backgroundColor: layoutMode === 'classic' ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: layoutMode === 'classic' ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Feather
+                  name="book-open"
+                  size={12}
+                  color={layoutMode === 'classic' ? colors.primary : activePalette.ink}
+                />
+                <Text
+                  style={[
+                    styles.layoutModeText,
+                    { color: layoutMode === 'classic' ? colors.primary : activePalette.ink },
+                  ]}
+                >
+                  Book Page
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setLayoutMode('separated');
+                  persistReaderPrefs(fontSizeIdx, useSerif, paperTheme, 'separated');
+                }}
+                style={[
+                  styles.layoutModePill,
+                  {
+                    backgroundColor: layoutMode === 'separated' ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: layoutMode === 'separated' ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Feather
+                  name="align-left"
+                  size={12}
+                  color={layoutMode === 'separated' ? colors.primary : activePalette.ink}
+                />
+                <Text
+                  style={[
+                    styles.layoutModeText,
+                    { color: layoutMode === 'separated' ? colors.primary : activePalette.ink },
+                  ]}
+                >
+                  Cards
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
 
       {/* Progress bar */}
-      <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
+      <View style={[styles.progressTrack, { backgroundColor: activePalette.border }]}>
         <View
           style={[
             styles.progressFill,
@@ -379,62 +548,86 @@ export default function ReaderScreen() {
         />
       </View>
 
-      {/* Reading content */}
+      {/* Reading content: Typeset Book Page View */}
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={[styles.content, { paddingBottom: botPad + 120 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.segmentTag, { backgroundColor: `${book.coverColor}15`, borderColor: `${book.coverColor}30` }]}>
-          <View style={[styles.segmentDot, { backgroundColor: book.coverColor }]} />
-          <Text style={[styles.segmentTagText, { color: book.coverColor }]}>
-            Segment {segmentIndex + 1}  •  {segment.paragraphs.length} paragraph{segment.paragraphs.length !== 1 ? 's' : ''}
-          </Text>
-        </View>
-
-        {simplifiedText ? (
-          <View style={[styles.simplifiedContainer, { backgroundColor: `${book.coverColor}10` }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 6 }}>
-              <Feather name="zap" size={16} color={book.coverColor} />
-              <Text style={[styles.simplifiedHeader, { color: book.coverColor }]}>AI Simplified Version</Text>
-            </View>
-            <Text style={[styles.paragraph, { color: colors.foreground, fontSize, lineHeight, fontFamily: bodyFontFamily }]}>{simplifiedText}</Text>
-            <TouchableOpacity onPress={() => setSimplifiedText(null)} style={{ marginTop: 8, alignSelf: 'flex-start' }}>
-              <Text style={{ color: colors.primary, fontFamily: 'Inter_500Medium' }}>Return to Original</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          segment.paragraphs.map((para, i) => (
-            <Text key={i} style={[styles.paragraph, { color: colors.foreground, fontSize, lineHeight, fontFamily: bodyFontFamily }]}>
-              {para}
-            </Text>
-          ))
-        )}
+        <BookPageView
+          bookTitle={book.title}
+          bookAuthor={book.author}
+          coverColor={book.coverColor}
+          segmentIndex={segmentIndex}
+          totalSegments={totalSegments}
+          paragraphs={displayedParagraphs}
+          fontSize={fontSize}
+          lineHeight={lineHeight}
+          useSerif={useSerif}
+          paperTheme={paperTheme}
+          layoutMode={layoutMode}
+          isSimplified={Boolean(simplifiedText)}
+          onExitSimplified={() => setSimplifiedText(null)}
+        />
 
         {/* End-of-section actions with balanced vertical rhythm */}
         {!showFinishCard && (
           <View style={styles.readerActions}>
-            {!simplifiedText && (
-              <TouchableOpacity
-                onPress={handleSimplify}
-                style={[styles.simplifyBtn, { borderColor: book.coverColor }]}
-                activeOpacity={0.7}
-                disabled={isSimplifying}
-              >
-                <Feather name="zap" size={16} color={book.coverColor} />
-                <Text style={[styles.simplifyBtnText, { color: book.coverColor }]}>
-                  {isSimplifying ? 'Simplifying...' : 'Simplify Section'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <View style={styles.secondaryActionRow}>
+              {segmentIndex > 0 && (
+                <TouchableOpacity
+                  onPress={handlePreviousSection}
+                  style={[
+                    styles.prevPageBtn,
+                    {
+                      backgroundColor: activePalette.pageBg,
+                      borderColor: activePalette.border,
+                    },
+                  ]}
+                  activeOpacity={0.75}
+                >
+                  <Feather name="chevron-left" size={16} color={activePalette.ink} />
+                  <Text style={[styles.prevPageBtnText, { color: activePalette.ink }]}>
+                    Previous Page
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {!simplifiedText && (
+                <TouchableOpacity
+                  onPress={handleSimplify}
+                  style={[
+                    styles.simplifyBtn,
+                    {
+                      flex: 1,
+                      borderColor: book.coverColor,
+                      backgroundColor: activePalette.pageBg,
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                  disabled={isSimplifying}
+                >
+                  <Feather name="zap" size={15} color={book.coverColor} />
+                  <Text style={[styles.simplifyBtnText, { color: book.coverColor }]}>
+                    {isSimplifying ? 'Simplifying...' : 'Simplify Section'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setShowCoachModal(true);
               }}
-              style={[styles.coachDiscussBtn, { borderColor: book.coverColor, backgroundColor: `${book.coverColor}12` }]}
+              style={[
+                styles.coachDiscussBtn,
+                {
+                  borderColor: book.coverColor,
+                  backgroundColor: activePalette.pageBg,
+                },
+              ]}
               activeOpacity={0.8}
             >
               <Text style={{ fontSize: 18 }}>🦉</Text>
@@ -454,7 +647,7 @@ export default function ReaderScreen() {
                 style={styles.doneBtn}
               >
                 <Feather name="check-circle" size={20} color="#FFF" />
-                <Text style={styles.doneBtnText}>I've finished reading</Text>
+                <Text style={styles.doneBtnText}>I've finished reading this page</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -577,39 +770,32 @@ const styles = StyleSheet.create({
   timer: { fontSize: 13, fontFamily: 'Inter_500Medium', textAlign: 'right' },
   progressTrack: { height: 4, width: '100%' },
   progressFill: { height: 4, borderTopRightRadius: 4, borderBottomRightRadius: 4 },
-  content: { paddingHorizontal: 22, paddingTop: 24, gap: 0 },
-  segmentTag: {
+  content: { paddingHorizontal: 14, paddingTop: 18, gap: 0 },
+  readerActions: {
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
+    gap: 12,
+    marginTop: 4,
+  },
+  secondaryActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    marginBottom: 28,
+    gap: 10,
+  },
+  prevPageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
   },
-  segmentDot: { width: 7, height: 7, borderRadius: 3.5 },
-  segmentTagText: { fontSize: 12, fontFamily: 'Inter_500Medium' },
-  paragraph: {
-    fontSize: 17,
-    lineHeight: 30,
-    fontFamily: 'Inter_400Regular',
-    marginBottom: 22,
-    letterSpacing: 0.1,
-  },
-  simplifiedContainer: {
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 24,
-  },
-  simplifiedHeader: {
+  prevPageBtnText: {
     fontSize: 14,
     fontFamily: 'Inter_600SemiBold',
-  },
-  readerActions: {
-    gap: 12,
-    marginTop: 12,
   },
   simplifyBtn: {
     flexDirection: 'row',
@@ -618,10 +804,11 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     paddingVertical: 14,
+    paddingHorizontal: 16,
     borderWidth: 1,
   },
   simplifyBtnText: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: 'Inter_600SemiBold',
   },
   doneBtn: {
@@ -729,21 +916,26 @@ const styles = StyleSheet.create({
     minWidth: 38,
     alignItems: 'flex-end',
   },
-  typographyBar: {
+  typographyDrawer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  typographyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   typographyGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   sizeBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 10,
   },
@@ -758,12 +950,42 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   fontPill: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
   },
   fontPillText: {
-    fontSize: 13,
+    fontSize: 12.5,
+  },
+  paperThemePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  paperSwatchDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  paperThemeText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  layoutModePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  layoutModeText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
   },
 });

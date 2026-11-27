@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
@@ -35,8 +36,17 @@ import { useApp } from '@/context/CloudAppContext';
 import { Book } from '@/types';
 import { resolveStorageUrl } from '@/utils/api';
 import { CoachChatView } from './CoachChatView';
+import {
+  BookPageView,
+  BookLayoutMode,
+  PAPER_PALETTES,
+  PaperTheme,
+} from './BookPageView';
 
 const DEFAULT_ASPECT = 0.7727; // A4 portrait width/height fallback
+const READER_PREFS_KEY = '@readwell/reader-prefs';
+const FONT_SIZES = [15, 17, 19, 22] as const;
+const PAPER_THEMES: PaperTheme[] = ['paper', 'sepia', 'night'];
 
 // ─── Fullscreen pinch/pan zoom overlay ──────────────────────────────────────
 
@@ -150,12 +160,55 @@ export default function PdfReader({ book }: { book: Book }) {
 
   const [showFinishCard, setShowFinishCard] = useState(false);
   const [showCoachModal, setShowCoachModal] = useState(false);
+  const [showTypographyBar, setShowTypographyBar] = useState(false);
+  const [fontSizeIdx, setFontSizeIdx] = useState(1);
+  const [useSerif, setUseSerif] = useState(true);
+  const [paperTheme, setPaperTheme] = useState<PaperTheme>('paper');
+  const [layoutMode, setLayoutMode] = useState<BookLayoutMode>('classic');
   const [elapsed, setElapsed] = useState(0);
   const elapsedRef = useRef(0);
   const [zoomPage, setZoomPage] = useState<{ uri: string; aspect: number } | null>(null);
   const [failedPages, setFailedPages] = useState<Set<number>>(new Set());
   const scrollRef = useRef<ScrollView>(null);
   const finishAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    AsyncStorage.getItem(READER_PREFS_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.fontSizeIdx === 'number' && parsed.fontSizeIdx >= 0 && parsed.fontSizeIdx < FONT_SIZES.length) {
+          setFontSizeIdx(parsed.fontSizeIdx);
+        }
+        if (typeof parsed.useSerif === 'boolean') {
+          setUseSerif(parsed.useSerif);
+        }
+        if (parsed.paperTheme === 'paper' || parsed.paperTheme === 'sepia' || parsed.paperTheme === 'night') {
+          setPaperTheme(parsed.paperTheme);
+        }
+        if (parsed.layoutMode === 'classic' || parsed.layoutMode === 'separated') {
+          setLayoutMode(parsed.layoutMode);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const persistReaderPrefs = (
+    nextSizeIdx: number,
+    nextSerif: boolean,
+    nextTheme: PaperTheme = paperTheme,
+    nextLayout: BookLayoutMode = layoutMode,
+  ) => {
+    AsyncStorage.setItem(
+      READER_PREFS_KEY,
+      JSON.stringify({
+        fontSizeIdx: nextSizeIdx,
+        useSerif: nextSerif,
+        paperTheme: nextTheme,
+        layoutMode: nextLayout,
+      }),
+    ).catch(() => {});
+  };
 
   const segmentIndex = Math.max(0, book.currentSegmentIndex || 0);
   const segments = Array.isArray(book.segments) ? book.segments : [];
@@ -177,6 +230,24 @@ export default function PdfReader({ book }: { book: Book }) {
     sectionHasLowConfidencePages && lowConfidencePageCount === sectionPages.length;
 
   const [visiblePage, setVisiblePage] = useState(segment?.pageStart ?? 1);
+
+  const sectionParagraphs = useMemo(() => {
+    const fromPages = sectionPages
+      .map(p => p.text?.trim())
+      .filter((t): t is string => Boolean(t && t.length > 0));
+    if (fromPages.length > 0) return fromPages;
+    return Array.isArray(segment?.paragraphs)
+      ? segment.paragraphs.filter(p => p && p.trim().length > 0)
+      : [];
+  }, [sectionPages, segment?.paragraphs]);
+
+  const hasReadableSectionText = useMemo(() => {
+    const wordCount = sectionParagraphs.join(' ').trim().split(/\s+/).filter(Boolean).length;
+    return wordCount >= 20;
+  }, [sectionParagraphs]);
+
+  const [viewMode, setViewMode] = useState<'book' | 'scan'>('book');
+  const activeViewMode = hasReadableSectionText ? viewMode : 'scan';
 
   // Reset the visible-page indicator & timer whenever the reader advances to a new section.
   useEffect(() => {
@@ -308,7 +379,20 @@ export default function PdfReader({ book }: { book: Book }) {
     }
   };
 
+  const handlePreviousSection = async () => {
+    if (segmentIndex <= 0) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const prevIndex = segmentIndex - 1;
+    elapsedRef.current = 0;
+    setElapsed(0);
+    setShowFinishCard(false);
+    finishAnim.setValue(0);
+    await updateBook(book.id, { currentSegmentIndex: prevIndex });
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  };
+
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (activeViewMode === 'book') return;
     // Estimate which page is at the top of the viewport within this section
     const y = e.nativeEvent.contentOffset.y;
     const imgWidth = width - 24;
@@ -340,27 +424,80 @@ export default function PdfReader({ book }: { book: Book }) {
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const imgWidth = width - 24;
   const progressFraction = totalPages > 0 ? visiblePage / totalPages : 0;
+  const fontSize = FONT_SIZES[fontSizeIdx];
+  const lineHeight = Math.round(fontSize * 1.72);
+  const activePalette = PAPER_PALETTES[paperTheme] ?? PAPER_PALETTES.paper;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: activeViewMode === 'book' ? activePalette.canvasBg : colors.background },
+      ]}
+    >
       {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: topPad + 8,
+            backgroundColor: activeViewMode === 'book' ? activePalette.pageBg : colors.background,
+          },
+        ]}
+      >
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Feather name="arrow-left" size={20} color={colors.foreground} />
+          <Feather
+            name="arrow-left"
+            size={20}
+            color={activeViewMode === 'book' ? activePalette.ink : colors.foreground}
+          />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text
-            style={[styles.bookTitle, { color: colors.foreground }]}
+            style={[
+              styles.bookTitle,
+              { color: activeViewMode === 'book' ? activePalette.ink : colors.foreground },
+            ]}
             numberOfLines={1}
             ellipsizeMode="tail"
           >
             {book.title}
           </Text>
-          <Text style={[styles.segmentInfo, { color: colors.mutedForeground }]}>
+          <Text
+            style={[
+              styles.segmentInfo,
+              { color: activeViewMode === 'book' ? activePalette.mutedInk : colors.mutedForeground },
+            ]}
+          >
             Page {visiblePage} of {totalPages}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {activeViewMode === 'book' && (
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.selectionAsync();
+                setShowTypographyBar((v) => !v);
+              }}
+              accessibilityLabel="Reader typography settings"
+              style={[
+                styles.typeToggleBtn,
+                {
+                  backgroundColor: showTypographyBar ? `${colors.primary}20` : activePalette.calloutBg,
+                  borderColor: showTypographyBar ? colors.primary : activePalette.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.typeToggleText,
+                  { color: showTypographyBar ? colors.primary : activePalette.ink },
+                ]}
+              >
+                Aa
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -378,9 +515,165 @@ export default function PdfReader({ book }: { book: Book }) {
               <Text style={[styles.coachHeaderBtnText, { color: colors.primary }]}>Coach</Text>
             )}
           </TouchableOpacity>
-          <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
+          <Text
+            style={[
+              styles.timer,
+              { color: activeViewMode === 'book' ? activePalette.mutedInk : colors.mutedForeground },
+            ]}
+          >
+            {timeStr}
+          </Text>
         </View>
       </View>
+
+      {/* Typography & Book Page Controls Drawer */}
+      {activeViewMode === 'book' && showTypographyBar && (
+        <View
+          style={[
+            styles.typographyDrawer,
+            {
+              backgroundColor: activePalette.pageBg,
+              borderBottomColor: activePalette.border,
+            },
+          ]}
+        >
+          <View style={styles.typographyRow}>
+            <View style={styles.typographyGroup}>
+              <TouchableOpacity
+                onPress={() => {
+                  const next = Math.max(0, fontSizeIdx - 1);
+                  setFontSizeIdx(next);
+                  persistReaderPrefs(next, useSerif, paperTheme, layoutMode);
+                }}
+                disabled={fontSizeIdx === 0}
+                style={[styles.sizeBtn, { backgroundColor: activePalette.calloutBg, opacity: fontSizeIdx === 0 ? 0.45 : 1 }]}
+              >
+                <Text style={[styles.sizeBtnText, { color: activePalette.ink }]}>A-</Text>
+              </TouchableOpacity>
+              <Text style={[styles.sizeIndicator, { color: activePalette.mutedInk }]}>{fontSize}px</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  const next = Math.min(FONT_SIZES.length - 1, fontSizeIdx + 1);
+                  setFontSizeIdx(next);
+                  persistReaderPrefs(next, useSerif, paperTheme, layoutMode);
+                }}
+                disabled={fontSizeIdx === FONT_SIZES.length - 1}
+                style={[styles.sizeBtn, { backgroundColor: activePalette.calloutBg, opacity: fontSizeIdx === FONT_SIZES.length - 1 ? 0.45 : 1 }]}
+              >
+                <Text style={[styles.sizeBtnText, { color: activePalette.ink }]}>A+</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.typographyGroup}>
+              <TouchableOpacity
+                onPress={() => {
+                  setUseSerif(true);
+                  persistReaderPrefs(fontSizeIdx, true, paperTheme, layoutMode);
+                }}
+                style={[
+                  styles.fontPill,
+                  {
+                    backgroundColor: useSerif ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: useSerif ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.fontPillText, { fontFamily: 'Newsreader_600SemiBold', color: useSerif ? colors.primary : activePalette.ink }]}>
+                  Book Serif
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setUseSerif(false);
+                  persistReaderPrefs(fontSizeIdx, false, paperTheme, layoutMode);
+                }}
+                style={[
+                  styles.fontPill,
+                  {
+                    backgroundColor: !useSerif ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: !useSerif ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.fontPillText, { fontFamily: 'Inter_600SemiBold', color: !useSerif ? colors.primary : activePalette.ink }]}>
+                  Clean Sans
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.typographyRow}>
+            <View style={styles.typographyGroup}>
+              {PAPER_THEMES.map((themeKey) => {
+                const swatch = PAPER_PALETTES[themeKey];
+                const isSelected = paperTheme === themeKey;
+                return (
+                  <TouchableOpacity
+                    key={themeKey}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      setPaperTheme(themeKey);
+                      persistReaderPrefs(fontSizeIdx, useSerif, themeKey, layoutMode);
+                    }}
+                    style={[
+                      styles.paperThemePill,
+                      {
+                        backgroundColor: swatch.pageBg,
+                        borderColor: isSelected ? colors.primary : swatch.border,
+                        borderWidth: isSelected ? 2 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.paperSwatchDot, { backgroundColor: swatch.ink }]} />
+                    <Text style={[styles.paperThemeText, { color: swatch.ink }]}>{swatch.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.typographyGroup}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setLayoutMode('classic');
+                  persistReaderPrefs(fontSizeIdx, useSerif, paperTheme, 'classic');
+                }}
+                style={[
+                  styles.layoutModePill,
+                  {
+                    backgroundColor: layoutMode === 'classic' ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: layoutMode === 'classic' ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Feather name="book-open" size={12} color={layoutMode === 'classic' ? colors.primary : activePalette.ink} />
+                <Text style={[styles.layoutModeText, { color: layoutMode === 'classic' ? colors.primary : activePalette.ink }]}>
+                  Book Page
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setLayoutMode('separated');
+                  persistReaderPrefs(fontSizeIdx, useSerif, paperTheme, 'separated');
+                }}
+                style={[
+                  styles.layoutModePill,
+                  {
+                    backgroundColor: layoutMode === 'separated' ? `${colors.primary}18` : activePalette.calloutBg,
+                    borderColor: layoutMode === 'separated' ? colors.primary : activePalette.border,
+                  },
+                ]}
+              >
+                <Feather name="align-left" size={12} color={layoutMode === 'separated' ? colors.primary : activePalette.ink} />
+                <Text style={[styles.layoutModeText, { color: layoutMode === 'separated' ? colors.primary : activePalette.ink }]}>
+                  Cards
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Progress bar */}
       <View style={[styles.progressTrack, { backgroundColor: colors.muted }]}>
@@ -401,11 +694,66 @@ export default function PdfReader({ book }: { book: Book }) {
         scrollEventThrottle={16}
         onScroll={onScroll}
       >
-        <View style={[styles.segmentTag, { backgroundColor: `${book.coverColor}15`, borderColor: `${book.coverColor}30` }]}>
-          <View style={[styles.segmentDot, { backgroundColor: book.coverColor }]} />
-          <Text style={[styles.segmentTagText, { color: book.coverColor }]}>
-            Section {segmentIndex + 1} of {totalSegments}  •  Pages {segment.pageStart}–{segment.pageEnd}
-          </Text>
+        <View style={styles.topControlsRow}>
+          <View style={[styles.segmentTag, { backgroundColor: `${book.coverColor}15`, borderColor: `${book.coverColor}30` }]}>
+            <View style={[styles.segmentDot, { backgroundColor: book.coverColor }]} />
+            <Text style={[styles.segmentTagText, { color: book.coverColor }]}>
+              Section {segmentIndex + 1} of {totalSegments}  •  Pages {segment.pageStart}–{segment.pageEnd}
+            </Text>
+          </View>
+
+          {hasReadableSectionText && (
+            <View style={[styles.modeSwitcher, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setViewMode('book');
+                }}
+                style={[
+                  styles.modePill,
+                  activeViewMode === 'book' && { backgroundColor: colors.card },
+                ]}
+              >
+                <Feather
+                  name="book-open"
+                  size={12}
+                  color={activeViewMode === 'book' ? colors.primary : colors.mutedForeground}
+                />
+                <Text
+                  style={[
+                    styles.modePillText,
+                    { color: activeViewMode === 'book' ? colors.primary : colors.mutedForeground },
+                  ]}
+                >
+                  Book View
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setViewMode('scan');
+                }}
+                style={[
+                  styles.modePill,
+                  activeViewMode === 'scan' && { backgroundColor: colors.card },
+                ]}
+              >
+                <Feather
+                  name="file-text"
+                  size={12}
+                  color={activeViewMode === 'scan' ? colors.primary : colors.mutedForeground}
+                />
+                <Text
+                  style={[
+                    styles.modePillText,
+                    { color: activeViewMode === 'scan' ? colors.primary : colors.mutedForeground },
+                  ]}
+                >
+                  PDF Pages
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {book.ocrUsed && (
@@ -417,54 +765,99 @@ export default function PdfReader({ book }: { book: Book }) {
           </View>
         )}
 
-        {sectionPages.map((page, index) => {
-          const aspect = page.width && page.height ? page.width / page.height : DEFAULT_ASPECT;
-          const uri = resolveStorageUrl(page.imageUrl);
-          return (
-            <Reanimated.View 
-              key={page.pageNumber} 
-              entering={FadeInUp.delay(50 + index * 100).springify()}
-              layout={Layout.springify()}
-            >
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={() => setZoomPage({ uri, aspect })}
-                style={styles.pageWrap}
+        {activeViewMode === 'book' ? (
+          <BookPageView
+            bookTitle={book.title}
+            bookAuthor={book.author}
+            coverColor={book.coverColor}
+            segmentIndex={segmentIndex}
+            totalSegments={totalSegments}
+            paragraphs={sectionParagraphs}
+            pageRangeLabel={`${segment.pageStart ?? 1}–${segment.pageEnd ?? totalPages}`}
+            fontSize={fontSize}
+            lineHeight={lineHeight}
+            useSerif={useSerif}
+            paperTheme={paperTheme}
+            layoutMode={layoutMode}
+          />
+        ) : (
+          sectionPages.map((page, index) => {
+            const aspect = page.width && page.height ? page.width / page.height : DEFAULT_ASPECT;
+            const uri = resolveStorageUrl(page.imageUrl);
+            return (
+              <Reanimated.View 
+                key={page.pageNumber} 
+                entering={FadeInUp.delay(50 + index * 100).springify()}
+                layout={Layout.springify()}
               >
-                <Image
-                  source={{ uri }}
-                  style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
-                  contentFit="contain"
-                  cachePolicy="disk"
-                  transition={150}
-                  onError={(e) => onImageError(page.pageNumber, e)}
-                />
-                {failedPages.has(page.pageNumber) && (
-                  <View style={styles.imageErrorOverlay} pointerEvents="none">
-                    <Feather name="image" size={20} color={colors.destructive} />
-                    <Text style={[styles.imageErrorText, { color: colors.destructive }]}>Could not load page</Text>
-                  </View>
-                )}
-                {page.lowConfidence && (
-                  <View
-                    style={[styles.lowConfidenceBadge, { backgroundColor: `${colors.honey}30`, borderColor: colors.honeyDeep }]}
-                    pointerEvents="none"
-                    accessibilityRole="alert"
-                    accessibilityLabel="Blurry scan: quiz questions may be limited"
-                  >
-                    <Feather name="alert-triangle" size={12} color={colors.honeyDeep} />
-                    <Text style={[styles.lowConfidenceBadgeText, { color: colors.honeyDeep }]}>
-                      Blurry scan — quiz questions may be limited
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </Reanimated.View>
-          );
-        })}
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => setZoomPage({ uri, aspect })}
+                  style={styles.pageWrap}
+                >
+                  <Image
+                    source={{ uri }}
+                    style={{ width: imgWidth, height: imgWidth / aspect, borderRadius: 6, backgroundColor: colors.muted }}
+                    contentFit="contain"
+                    cachePolicy="disk"
+                    transition={150}
+                    onError={(e) => onImageError(page.pageNumber, e)}
+                  />
+                  {failedPages.has(page.pageNumber) && (
+                    <View style={styles.imageErrorOverlay} pointerEvents="none">
+                      <Feather name="image" size={20} color={colors.destructive} />
+                      <Text style={[styles.imageErrorText, { color: colors.destructive }]}>Could not load page</Text>
+                    </View>
+                  )}
+                  {page.lowConfidence && (
+                    <View
+                      style={[styles.lowConfidenceBadge, { backgroundColor: `${colors.honey}30`, borderColor: colors.honeyDeep }]}
+                      pointerEvents="none"
+                      accessibilityRole="alert"
+                      accessibilityLabel="Blurry scan: quiz questions may be limited"
+                    >
+                      <Feather name="alert-triangle" size={12} color={colors.honeyDeep} />
+                      <Text style={[styles.lowConfidenceBadgeText, { color: colors.honeyDeep }]}>
+                        Blurry scan — quiz questions may be limited
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </Reanimated.View>
+            );
+          })
+        )}
 
         {!showFinishCard && (
           <Reanimated.View entering={FadeInUp.delay(200).springify()} style={styles.readerActions}>
+            {segmentIndex > 0 && (
+              <TouchableOpacity
+                onPress={handlePreviousSection}
+                style={[
+                  styles.prevPageBtn,
+                  {
+                    backgroundColor: activeViewMode === 'book' ? activePalette.pageBg : colors.card,
+                    borderColor: activeViewMode === 'book' ? activePalette.border : colors.border,
+                  },
+                ]}
+                activeOpacity={0.75}
+              >
+                <Feather
+                  name="chevron-left"
+                  size={16}
+                  color={activeViewMode === 'book' ? activePalette.ink : colors.foreground}
+                />
+                <Text
+                  style={[
+                    styles.prevPageBtnText,
+                    { color: activeViewMode === 'book' ? activePalette.ink : colors.foreground },
+                  ]}
+                >
+                  Previous Section
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -634,19 +1027,48 @@ const styles = StyleSheet.create({
   progressTrack: { height: 3, width: '100%' },
   progressFill: { height: 3 },
   content: { paddingHorizontal: 12, paddingTop: 16, gap: 12 },
+  topControlsRow: {
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
   segmentTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
     borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 5,
-    marginBottom: 8,
     gap: 6,
   },
   segmentDot: { width: 7, height: 7, borderRadius: 3.5 },
   segmentTagText: { fontSize: 12, fontFamily: 'Inter_500Medium' },
+  modeSwitcher: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 3,
+  },
+  modePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
+  },
+  modePillText: {
+    fontSize: 11.5,
+    fontFamily: 'Inter_600SemiBold',
+  },
   pageWrap: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -819,6 +1241,102 @@ const styles = StyleSheet.create({
   },
   coachHeaderBtnText: {
     fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  typeToggleBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  typeToggleText: {
+    fontSize: 12.5,
+    fontFamily: 'Newsreader_700Bold',
+  },
+  typographyDrawer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  typographyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  typographyGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sizeBtn: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  sizeBtnText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  sizeIndicator: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+    minWidth: 34,
+    textAlign: 'center',
+  },
+  fontPill: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  fontPillText: {
+    fontSize: 12.5,
+  },
+  paperThemePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  paperSwatchDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  paperThemeText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  layoutModePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  layoutModeText: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  prevPageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+  },
+  prevPageBtnText: {
+    fontSize: 14,
     fontFamily: 'Inter_600SemiBold',
   },
 });

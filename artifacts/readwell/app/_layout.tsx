@@ -18,6 +18,7 @@ import {
 } from '@expo-google-fonts/inter';
 import {
   Newsreader_400Regular,
+  Newsreader_400Regular_Italic,
   Newsreader_500Medium,
   Newsreader_600SemiBold,
   Newsreader_700Bold,
@@ -88,6 +89,7 @@ export default function RootLayout() {
 
   const [newsreaderLoaded, newsreaderError] = useNewsreaderFonts({
     Newsreader_400Regular,
+    Newsreader_400Regular_Italic,
     Newsreader_500Medium,
     Newsreader_600SemiBold,
     Newsreader_700Bold,
