@@ -67,8 +67,8 @@ export function WhileYouWereAwayCard({ onOpenCoach, style }: Props) {
         </View>
 
         {/* Digest Body */}
-        <Text style={[styles.digestBody, { color: colors.foreground }]} numberOfLines={4}>
-          {digest.digest}
+        <Text style={[styles.digestBody, { color: colors.foreground }]} numberOfLines={5}>
+          {digest.digest.replace(/\*\*/g, '')}
         </Text>
 
         {/* Action Row */}

@@ -71,12 +71,24 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
   const [isSending, setIsSending] = useState(false);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
 
-  // Default selected book to the first in-progress book
+  // Keep selectedBook synchronized with books state (progress updates, book deletions, or initial load)
   useEffect(() => {
-    if (!selectedBook && books.length > 0) {
-      const active = books.find(b => b.status === 'in_progress') || books[0];
-      setSelectedBook(active);
+    if (books.length === 0) {
+      if (selectedBook) setSelectedBook(null);
+      return;
     }
+    if (selectedBook) {
+      const updatedMatch = books.find(b => b.id === selectedBook.id);
+      if (!updatedMatch) {
+        const nextActive = books.find(b => b.status === 'in_progress') || books[0];
+        setSelectedBook(nextActive);
+      } else if (updatedMatch !== selectedBook) {
+        setSelectedBook(updatedMatch);
+      }
+      return;
+    }
+    const active = books.find(b => b.status === 'in_progress') || books[0];
+    setSelectedBook(active);
   }, [books, selectedBook]);
 
   // Load cached messages & remote strategy/digest on mount

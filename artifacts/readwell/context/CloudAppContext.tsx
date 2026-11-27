@@ -11,6 +11,7 @@ import {
   Quiz,
 } from '@/types';
 import { deletePdfPages } from '@/utils/api';
+import { removeBookFromReviewQueue } from '@/utils/reviewQueue';
 import { calculateReadingMinutes, getLevelFromXp, todayDate } from '@/utils/xp';
 import { runOrphanCleanup, type PendingPdfImport } from './orphanCleanup';
 import { applyOcrMigration, parsePendingImports } from '../utils/ocr';
@@ -199,6 +200,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteBook = useCallback(async (id: string) => {
     const currentUserId = user?.uid || 'guest_user';
+    removeBookFromReviewQueue(id).catch(() => {});
     setBooks(prev => {
       const book = prev.find(b => b.id === id);
       const updated = prev.filter(b => b.id !== id);

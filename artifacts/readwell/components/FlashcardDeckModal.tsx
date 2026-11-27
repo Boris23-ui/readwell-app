@@ -33,7 +33,8 @@ export function FlashcardDeckModal({ visible, onClose }: Props) {
   const [newType, setNewType] = useState<Flashcard['cardType']>('concept');
 
   const deck = dueFlashcards.length > 0 ? dueFlashcards : flashcards;
-  const currentCard = deck[currentIndex];
+  const safeIndex = deck.length > 0 ? Math.min(currentIndex, deck.length - 1) : 0;
+  const currentCard = deck[safeIndex];
 
   const handleFlip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -45,10 +46,10 @@ export function FlashcardDeckModal({ visible, onClose }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await reviewCard(currentCard.id, quality, currentCard.front);
     setIsFlipped(false);
-    if (currentIndex >= deck.length - 1) {
+    if (safeIndex >= deck.length - 1) {
       setCurrentIndex(0);
     } else {
-      setCurrentIndex(prev => prev + 1);
+      setCurrentIndex(safeIndex + 1);
     }
   };
 
@@ -193,7 +194,7 @@ export function FlashcardDeckModal({ visible, onClose }: Props) {
                     </Text>
                   </View>
                   <Text style={[styles.cardCounter, { color: colors.mutedForeground }]}>
-                    {currentIndex + 1} of {deck.length}
+                    {safeIndex + 1} of {deck.length}
                   </Text>
                 </View>
 

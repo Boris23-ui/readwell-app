@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Animated,
   Platform,
   Modal,
@@ -13,7 +14,7 @@ import {
   NativeScrollEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -145,14 +146,14 @@ export default function PdfReader({ book }: { book: Book }) {
   const insets = useSafeAreaInsets();
   const { updateBook } = useApp();
   const { width } = useWindowDimensions();
+  const isCompactHeader = width < 420;
 
   const [showFinishCard, setShowFinishCard] = useState(false);
   const [showCoachModal, setShowCoachModal] = useState(false);
-  const [sessionStart, setSessionStart] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState(0);
+  const elapsedRef = useRef(0);
   const [zoomPage, setZoomPage] = useState<{ uri: string; aspect: number } | null>(null);
   const [failedPages, setFailedPages] = useState<Set<number>>(new Set());
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const finishAnim = useRef(new Animated.Value(0)).current;
 
@@ -182,7 +183,7 @@ export default function PdfReader({ book }: { book: Book }) {
     setVisiblePage(segment?.pageStart ?? 1);
     setShowFinishCard(false);
     finishAnim.setValue(0);
-    setSessionStart(Date.now());
+    elapsedRef.current = 0;
     setElapsed(0);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [segmentIndex]);
@@ -205,14 +206,18 @@ export default function PdfReader({ book }: { book: Book }) {
     };
   }, [book.id, segmentIndex]);
 
-  useEffect(() => {
-    timerRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - sessionStart) / 1000));
-    }, 1000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [sessionStart]);
+  // Pause the reading timer automatically whenever PdfReader loses focus (e.g. during Quiz)
+  useFocusEffect(
+    useCallback(() => {
+      const interval = setInterval(() => {
+        elapsedRef.current += 1;
+        setElapsed(elapsedRef.current);
+      }, 1000);
+      return () => {
+        clearInterval(interval);
+      };
+    }, []),
+  );
 
   if (!segment) {
     const handleRestartBook = async () => {
@@ -250,9 +255,19 @@ export default function PdfReader({ book }: { book: Book }) {
     }).start();
   };
 
+  const hideFinish = () => {
+    Animated.timing(finishAnim, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowFinishCard(false);
+    });
+  };
+
   const handleTakeQuiz = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const secondsRead = Math.floor((Date.now() - sessionStart) / 1000);
+    const secondsRead = elapsedRef.current;
     const sectionWordCount = Array.isArray(segment?.paragraphs)
       ? segment.paragraphs.join(' ').split(/\s+/).filter(Boolean).length
       : 0;
@@ -279,11 +294,13 @@ export default function PdfReader({ book }: { book: Book }) {
           segmentIndex: String(segmentIndex),
           score: '0',
           total: '0',
-          secondsRead: String(Math.floor((Date.now() - sessionStart) / 1000)),
+          secondsRead: String(elapsedRef.current),
           skipped: 'true',
         },
       });
     } else {
+      elapsedRef.current = 0;
+      setElapsed(0);
       await updateBook(book.id, { currentSegmentIndex: nextIndex });
       setShowFinishCard(false);
       finishAnim.setValue(0);
@@ -319,7 +336,7 @@ export default function PdfReader({ book }: { book: Book }) {
   const secs = elapsed % 60;
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 16 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const imgWidth = width - 24;
   const progressFraction = totalPages > 0 ? visiblePage / totalPages : 0;
@@ -329,26 +346,37 @@ export default function PdfReader({ book }: { book: Book }) {
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Feather name="arrow-left" size={22} color={colors.foreground} />
+          <Feather name="arrow-left" size={20} color={colors.foreground} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={[styles.bookTitle, { color: colors.foreground }]} numberOfLines={1}>
+          <Text
+            style={[styles.bookTitle, { color: colors.foreground }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             {book.title}
           </Text>
           <Text style={[styles.segmentInfo, { color: colors.mutedForeground }]}>
             Page {visiblePage} of {totalPages}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <TouchableOpacity
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setShowCoachModal(true);
             }}
-            style={[styles.coachHeaderBtn, { backgroundColor: `${colors.primary}18` }]}
+            accessibilityLabel="Ask Reading Coach"
+            style={[
+              styles.coachHeaderBtn,
+              isCompactHeader && { paddingHorizontal: 8 },
+              { backgroundColor: `${colors.primary}18` },
+            ]}
           >
             <Text style={{ fontSize: 13 }}>🦉</Text>
-            <Text style={[styles.coachHeaderBtnText, { color: colors.primary }]}>Coach</Text>
+            {!isCompactHeader && (
+              <Text style={[styles.coachHeaderBtnText, { color: colors.primary }]}>Coach</Text>
+            )}
           </TouchableOpacity>
           <Text style={[styles.timer, { color: colors.mutedForeground }]}>{timeStr}</Text>
         </View>
@@ -436,7 +464,21 @@ export default function PdfReader({ book }: { book: Book }) {
         })}
 
         {!showFinishCard && (
-          <Reanimated.View entering={FadeInUp.delay(200).springify()}>
+          <Reanimated.View entering={FadeInUp.delay(200).springify()} style={styles.readerActions}>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowCoachModal(true);
+              }}
+              style={[styles.coachDiscussBtn, { borderColor: book.coverColor, backgroundColor: `${book.coverColor}12` }]}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 18 }}>🦉</Text>
+              <Text style={[styles.coachDiscussBtnText, { color: book.coverColor }]}>
+                Discuss this section with Coach
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               onPress={showFinish}
               style={[styles.doneBtn, { backgroundColor: book.coverColor }]}
@@ -448,6 +490,15 @@ export default function PdfReader({ book }: { book: Book }) {
           </Reanimated.View>
         )}
       </ScrollView>
+
+      {/* Dimmed scrim behind Quick Check sheet */}
+      {showFinishCard && (
+        <Pressable
+          onPress={hideFinish}
+          accessibilityLabel="Dismiss quick check sheet"
+          style={styles.sheetBackdrop}
+        />
+      )}
 
       {/* Quiz prompt card */}
       {showFinishCard && (
@@ -572,12 +623,12 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     paddingBottom: 12,
-    gap: 12,
+    gap: 8,
   },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  bookTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', maxWidth: 200, textAlign: 'center' },
+  headerCenter: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 4 },
+  bookTitle: { fontSize: 15, fontFamily: 'Newsreader_700Bold', maxWidth: '100%', textAlign: 'center' },
   segmentInfo: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 1 },
   timer: { fontSize: 13, fontFamily: 'Inter_500Medium', minWidth: 42, textAlign: 'right' },
   progressTrack: { height: 3, width: '100%' },
@@ -604,6 +655,24 @@ const styles = StyleSheet.create({
     elevation: 3,
     position: 'relative',
   },
+  readerActions: {
+    gap: 12,
+    marginTop: 8,
+    marginHorizontal: 10,
+  },
+  coachDiscussBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 14,
+  },
+  coachDiscussBtnText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
   doneBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -611,15 +680,19 @@ const styles = StyleSheet.create({
     gap: 8,
     borderRadius: 14,
     paddingVertical: 16,
-    marginTop: 12,
-    marginHorizontal: 10,
   },
   doneBtnText: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    zIndex: 10,
+  },
   quizCard: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    zIndex: 11,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,

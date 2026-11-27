@@ -48,6 +48,21 @@ export async function addMissedQuestion(bookId: string, bookTitle: string, quest
   // Calculate next review (2 days from now)
   const nextDate = new Date();
   nextDate.setDate(nextDate.getDate() + 2);
+
+  // Deduplicate by bookId + prompt so missing the same question twice resets its schedule instead of duplicating
+  const existingIdx = queue.findIndex(
+    item => item.bookId === bookId && item.question?.prompt === question.prompt,
+  );
+  if (existingIdx >= 0) {
+    queue[existingIdx] = {
+      ...queue[existingIdx],
+      originalAnswer,
+      nextReviewAt: nextDate.toISOString(),
+      stage: 0,
+    };
+    await AsyncStorage.setItem(REVIEW_QUEUE_KEY, JSON.stringify(queue));
+    return;
+  }
   
   const newItem: ReviewItem = {
     id: generateId(),
@@ -62,6 +77,14 @@ export async function addMissedQuestion(bookId: string, bookTitle: string, quest
   
   queue.push(newItem);
   await AsyncStorage.setItem(REVIEW_QUEUE_KEY, JSON.stringify(queue));
+}
+
+export async function removeBookFromReviewQueue(bookId: string): Promise<void> {
+  const queue = await getReviewQueue();
+  const filtered = queue.filter(item => item.bookId !== bookId);
+  if (filtered.length !== queue.length) {
+    await AsyncStorage.setItem(REVIEW_QUEUE_KEY, JSON.stringify(filtered));
+  }
 }
 
 export async function getDueReviews(limit = 5): Promise<ReviewItem[]> {

@@ -543,14 +543,19 @@ export default function ImportScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       if (isAbortError(e)) throw e;
-      // Page-cap or oversized errors should surface, not silently fall back.
+      // Oversized file errors (>20MB) should surface immediately.
       const msg = e?.message ?? '';
-      if (/maximum supported|too large/i.test(msg)) {
+      if (/too large/i.test(msg)) {
         setStatusMsg('');
         throw e;
       }
-      // Otherwise fall back to a text-only book so the user is never blocked.
-      setStatusMsg('Rendering failed — extracting text instead…');
+      // If page-image rendering exceeded the 150-page cap or Poppler is unavailable,
+      // fall back to a reflowable text book so large textbooks still import cleanly.
+      setStatusMsg(
+        /maximum supported/i.test(msg)
+          ? 'Large PDF (>150 pages) — extracting reflowable text instead…'
+          : 'Rendering failed — extracting text instead…',
+      );
       const result = await extractTextFromFile(file, {
         signal,
         onProgress: progress => {
@@ -702,11 +707,11 @@ export default function ImportScreen() {
           id: bookId,
           title: title.trim(),
           author: author.trim(),
-          content: content.trim(),
+          content: content.trim().slice(0, 4000),
           segments,
           status: 'in_progress',
           createdAt: new Date().toISOString(),
-          wordCount: countWords(content),
+          wordCount: contentWordCount,
           currentSegmentIndex: 0,
           coverColor: randomCoverColor(),
           sourceType: 'pdf',
@@ -731,11 +736,11 @@ export default function ImportScreen() {
           id: bookId,
           title: title.trim(),
           author: author.trim(),
-          content: content.trim(),
+          content: content.trim().slice(0, 4000),
           segments,
           status: 'in_progress',
           createdAt: new Date().toISOString(),
-          wordCount: countWords(content),
+          wordCount: contentWordCount,
           currentSegmentIndex: 0,
           coverColor: randomCoverColor(),
           sourceType: 'text',
