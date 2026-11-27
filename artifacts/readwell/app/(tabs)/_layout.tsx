@@ -51,6 +51,15 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          lineHeight: 16,
+          fontFamily: 'Inter_500Medium',
+          paddingBottom: 2,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
+        },
         tabBarStyle: {
           position: 'absolute',
           bottom: isWide ? 14 : 0,
@@ -61,7 +70,7 @@ function ClassicTabLayout() {
           borderTopColor: colors.border,
           elevation: 16,
           zIndex: 9999,
-          height: isWeb ? 68 : isIOS ? 84 : 64,
+          height: isWeb ? 74 : isIOS ? 86 : 68,
           paddingBottom: isWeb ? 10 : isIOS ? 28 : 10,
           paddingTop: 8,
           ...(isWide

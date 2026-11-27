@@ -27,6 +27,41 @@ interface Props {
   isModal?: boolean;
 }
 
+/**
+ * Lightweight inline markdown renderer for Coach messages so **bold** and *italic*
+ * spans render cleanly instead of displaying raw asterisks.
+ */
+function FormattedCoachText({
+  content,
+  style,
+}: {
+  content: string;
+  style: any;
+}) {
+  const tokens = content.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*)/g);
+  return (
+    <Text style={style}>
+      {tokens.map((token, idx) => {
+        if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+          return (
+            <Text key={idx} style={styles.boldInline}>
+              {token.slice(2, -2)}
+            </Text>
+          );
+        }
+        if (token.startsWith('*') && token.endsWith('*') && token.length > 2) {
+          return (
+            <Text key={idx} style={styles.italicInline}>
+              {token.slice(1, -1)}
+            </Text>
+          );
+        }
+        return <React.Fragment key={idx}>{token}</React.Fragment>;
+      })}
+    </Text>
+  );
+}
+
 export function CoachChatView({ initialBookContext, onClose, isModal = false }: Props) {
   const colors = useColors();
   const { books } = useApp();
@@ -107,9 +142,10 @@ export function CoachChatView({ initialBookContext, onClose, isModal = false }: 
             </View>
           )}
 
-          <Text style={[styles.messageText, { color: isMe ? '#FFF' : colors.foreground }]}>
-            {item.content}
-          </Text>
+          <FormattedCoachText
+            content={item.content}
+            style={[styles.messageText, { color: isMe ? '#FFF' : colors.foreground }]}
+          />
 
           <View style={styles.bubbleFooter}>
             {item.strategyVersion && !isMe ? (
@@ -246,7 +282,11 @@ export function CoachChatView({ initialBookContext, onClose, isModal = false }: 
       {/* Input Area */}
       <View style={[styles.inputContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
         <TextInput
-          style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+          style={[
+            styles.input,
+            { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background },
+            Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null,
+          ]}
           placeholder="Ask or reflect on your reading..."
           placeholderTextColor={colors.mutedForeground}
           value={inputText}
@@ -556,6 +596,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: 'Newsreader_500Medium',
     lineHeight: 22,
+  },
+  boldInline: {
+    fontFamily: 'Newsreader_700Bold',
+    fontWeight: '700',
+  },
+  italicInline: {
+    fontStyle: 'italic',
   },
   bubbleFooter: {
     flexDirection: 'row',

@@ -1,8 +1,103 @@
+import { Book, PdfPage, Segment } from '@/types';
+
 export function splitIntoParagraphs(text: string): string[] {
-  return text
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  if (!normalized) return [];
+
+  // 1. Standard blank-line separated paragraphs
+  const byBlankLines = normalized
     .split(/\n{2,}/)
-    .map(p => p.replace(/\n/g, ' ').trim())
+    .map(p => p.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim())
     .filter(p => p.split(/\s+/).length >= 8);
+
+  if (byBlankLines.length >= 2) {
+    return byBlankLines;
+  }
+
+  // 2. Fallback: single-newline separated lines (common when copying from PDFs/articles)
+  const bySingleLines = normalized
+    .split(/\n+/)
+    .map(p => p.replace(/\s+/g, ' ').trim())
+    .filter(p => p.split(/\s+/).length >= 8);
+
+  if (bySingleLines.length >= 2) {
+    return bySingleLines;
+  }
+
+  // 3. Fallback: single long wall of prose — split cleanly at sentence boundaries
+  const singleBlock = normalized.replace(/\s+/g, ' ').trim();
+  const totalWords = singleBlock.split(/\s+/).filter(Boolean).length;
+  if (totalWords >= 50) {
+    const sentences = singleBlock
+      .split(/(?<=[.!?])\s+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    if (sentences.length >= 2) {
+      const targetPerPara = Math.max(2, Math.min(4, Math.ceil(sentences.length / 3)));
+      const chunks: string[] = [];
+      let current: string[] = [];
+      let currentWords = 0;
+
+      for (const sentence of sentences) {
+        current.push(sentence);
+        currentWords += sentence.split(/\s+/).length;
+        if (current.length >= targetPerPara || currentWords >= 75) {
+          chunks.push(current.join(' '));
+          current = [];
+          currentWords = 0;
+        }
+      }
+      if (current.length > 0) {
+        if (chunks.length > 0 && currentWords < 15) {
+          chunks[chunks.length - 1] = `${chunks[chunks.length - 1]} ${current.join(' ')}`;
+        } else {
+          chunks.push(current.join(' '));
+        }
+      }
+
+      if (chunks.length >= 2) {
+        return chunks;
+      }
+    }
+  }
+
+  return byBlankLines.length > 0 ? byBlankLines : bySingleLines;
+}
+
+export const STARTER_BOOK_ID = 'starter-art-of-deep-reading';
+
+const STARTER_PARAGRAPHS = [
+  'Modern feeds train our brains to expect a small burst of novelty every few seconds. When we sit down with a long article or a book, that same restless rhythm makes our eyes glide across lines without registering what they mean. Deep reading is not a talent reserved for scholars; it is a skill that comes back quickly once you give your attention a clear cadence.',
+  'Psychologists studying memory have found a consistent pattern called the testing effect. Simply rereading a highlighted page feels productive because the sentences look familiar, yet familiarity fades within hours. Pausing after a short passage to retrieve an idea in your own words forces the brain to rebuild the pathway, which anchors the concept far more reliably.',
+  'The secret to making retrieval feel rewarding rather than stressful is chunk size. If you wait until the end of a forty-page chapter to check whether you followed the argument, small misunderstandings compound into frustration. Checking in after five paragraphs turns comprehension into a series of light checkpoints that keep momentum alive.',
+  'Context also transforms how we absorb unfamiliar vocabulary. Looking up a word in isolation rarely sticks, because the mind stores meaning through associations and contrast. Noticing how an author uses a word to shift the tone of a sentence lets you infer its nuance and recall it the next time you encounter it.',
+  'Consistency beats marathon sessions almost every time. Reading attentively for fifteen minutes every evening builds over ninety hours of focused reading across a year—enough to finish a dozen substantial books. Start small, protect the streak, and let curiosity pull you into the next page.',
+  'Great readers also treat a book as a conversation rather than a monologue. When a claim surprises you, pause and ask what assumption sits beneath it, or how it connects to something you observed in your own life. That brief habit of questioning shifts you from passive consumption into active synthesis.',
+  'When you notice your mind drifting—thinking about messages, errands, or tomorrow’s schedule—resist the urge to judge yourself harshly. Gently mark the last sentence you truly understood, take a single slow breath, and re-enter the paragraph from there. Calm redirection builds far stronger focus than willpower alone.',
+  'Over time, small daily sessions reshape how you approach difficult texts. Dense technical guides, classic novels, and long essays stop feeling like walls to climb all at once and start looking like paths made of manageable steps. Every segment you finish and reflect on compounds into lasting knowledge.',
+];
+
+export function createStarterBook(): Book {
+  const rawSegments = groupIntoSegments(STARTER_PARAGRAPHS, 5);
+  const segments: Segment[] = rawSegments.map((paragraphs, index) => ({
+    index,
+    paragraphs,
+  }));
+  const content = STARTER_PARAGRAPHS.join('\n\n');
+  return {
+    id: STARTER_BOOK_ID,
+    title: 'The Art of Deep Reading',
+    author: 'ReadWell Starter Guide',
+    content,
+    segments,
+    status: 'in_progress',
+    createdAt: new Date().toISOString(),
+    wordCount: countWords(content),
+    currentSegmentIndex: 0,
+    coverColor: '#CF6D4D',
+    sourceType: 'text',
+  };
 }
 
 export function groupIntoSegments(paragraphs: string[], size = 5): string[][] {
@@ -17,8 +112,6 @@ export function groupIntoSegments(paragraphs: string[], size = 5): string[][] {
   }
   return segments;
 }
-
-import { PdfPage, Segment } from '@/types';
 
 // Groups PDF pages into reading sections mapped to page ranges. Each section's
 // paragraphs hold the combined page text so the quiz generator keeps working.

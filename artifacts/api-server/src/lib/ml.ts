@@ -24,12 +24,17 @@ export interface MLInsight {
  * results at zero token cost.
  */
 export function evaluateComprehension(metrics: ReadingMetrics): MLInsight {
-  const wpm = metrics.secondsRead > 0
-    ? (metrics.wordCount / metrics.secondsRead) * 60
-    : 150; // default WPM if no timing data
+  const wpm =
+    metrics.secondsRead > 0 && metrics.wordCount > 0
+      ? (metrics.wordCount / metrics.secondsRead) * 60
+      : 180; // neutral WPM when timing or word-count telemetry is unavailable
 
-  // ELO-based baseline comprehension (normalized 0–5000 → 0.0–1.0)
-  const scoreFactor = Math.min(1.0, metrics.comprehensionScore / 100);
+  // Baseline comprehension: treat 0 (no prior quiz history) as a neutral 0.70
+  // baseline so first-time readers are not immediately flagged as struggling.
+  const scoreFactor =
+    metrics.comprehensionScore > 0
+      ? Math.min(1.0, metrics.comprehensionScore / 100)
+      : 0.7;
 
   // Speed factor: too fast (>400 wpm) = likely skimming; too slow (<80 wpm) = struggling
   let speedFactor = 1.0;

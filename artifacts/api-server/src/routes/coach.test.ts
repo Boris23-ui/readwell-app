@@ -13,6 +13,10 @@ vi.mock('../middlewares/auth', () => ({
     req.user = { id: TEST_USER_ID };
     next();
   },
+  optionalAuth: (req: any, _res: any, next: () => void) => {
+    req.user = { id: TEST_USER_ID };
+    next();
+  },
 }));
 
 // In-memory stand-in for the Supabase admin client. Supports only the calls
@@ -220,6 +224,37 @@ describe('Coach Agent API & Logic', () => {
       expect(reviewRes.status).toBe(200);
       expect(reviewRes.body.success).toBe(true);
       expect(reviewRes.body.card.repetitions).toBe(1);
+    });
+
+    it('matches the UI quick prompt "Why did you adapt your coaching style?" to explain_evolution', async () => {
+      const res = await request(app)
+        .post('/api/coach/chat')
+        .send({
+          userId: testUser,
+          message: 'Why did you adapt your coaching style?',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.intent).toBe('explain_evolution');
+      expect(res.body.agentName).toBe('evolution_engine');
+    });
+
+    it('uses actual book totalChapters when generating a reading plan via chat', async () => {
+      const res = await request(app)
+        .post('/api/coach/chat')
+        .send({
+          userId: testUser,
+          message: 'Create a reading plan for me',
+          bookContext: {
+            title: 'Short Essay',
+            chapter: 1,
+            totalChapters: 4,
+          },
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.intent).toBe('plan');
+      expect(res.body.reply).toContain('4 remaining sections');
     });
   });
 });

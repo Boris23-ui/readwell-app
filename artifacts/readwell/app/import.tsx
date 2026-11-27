@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -46,8 +46,8 @@ if (Platform.OS !== 'web') {
   } catch {}
 }
 
-const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.markdown', '.html', '.htm'];
-const ACCEPTED_MIME = 'application/pdf,text/plain,text/markdown,text/html';
+const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.html', '.png', '.jpg', '.webp'];
+const ACCEPTED_MIME = 'application/pdf,text/plain,text/markdown,text/html,image/png,image/jpeg,image/webp';
 
 function createImportAbortError(): Error {
   const error = new Error('Import cancelled.');
@@ -332,7 +332,7 @@ function MobileMediaButtons({
               Choose a file
             </Text>
             <Text style={[styles.mobilePickerSub, { color: colors.mutedForeground }]}>
-              PDF, TXT, or Markdown
+              PDF, TXT, Markdown, or HTML
             </Text>
           </View>
           <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
@@ -465,7 +465,14 @@ export default function ImportScreen() {
   const canProcess =
     title.trim().length > 0 &&
     (pdfData ? pdfData.pages.length > 0 : content.trim().length > 50);
-  const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top + 12;
+
+  const contentWordCount = useMemo(() => (content ? countWords(content) : 0), [content]);
+  const estimatedSegmentCount = useMemo(() => {
+    if (pdfData || content.trim().length <= 50) return 0;
+    return Math.max(1, Math.ceil(splitIntoParagraphs(content).length / 5));
+  }, [pdfData, content]);
+  const isLargeExtractedText = Boolean(sourceFile && !pdfData && content.length > 50_000);
 
   useEffect(() => {
     return () => {
@@ -564,8 +571,9 @@ export default function ImportScreen() {
 
   const handleWebFile = async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (!['pdf', 'txt', 'md', 'markdown', 'html', 'htm'].includes(ext)) {
-      setError(`Unsupported file type ".${ext}". Please use PDF, TXT, or Markdown.`);
+    const isImage = ['png', 'jpg', 'jpeg', 'webp'].includes(ext) || file.type.startsWith('image/');
+    if (!['pdf', 'txt', 'md', 'markdown', 'html', 'htm', 'png', 'jpg', 'jpeg', 'webp'].includes(ext) && !isImage) {
+      setError(`Unsupported file type ".${ext}". Please use PDF, TXT, Markdown, HTML, or an image.`);
       return;
     }
 
@@ -580,6 +588,13 @@ export default function ImportScreen() {
       if (ext === 'pdf') {
         // PDF → render pages on the server
         await handlePdfFile(file, file.name, controller.signal);
+      } else if (isImage || ext === 'html' || ext === 'htm') {
+        setStatusMsg(isImage ? 'Scanning page image…' : 'Extracting text…');
+        const result = await extractTextFromFile(file, {
+          signal: controller.signal,
+          language,
+        });
+        applyExtractedText(result.text, result.suggestedTitle, file.name);
       } else {
         // Plain text → read directly in browser
         const text = await file.text();
@@ -757,6 +772,7 @@ export default function ImportScreen() {
               router.back();
             }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.headerCloseBtn}
           >
             <Feather name="x" size={24} color={colors.foreground} />
           </TouchableOpacity>
@@ -869,27 +885,26 @@ export default function ImportScreen() {
           {!pdfData && (
             <View style={styles.field}>
               <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Document Language</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
                 {['English', 'Spanish', 'French', 'German', 'Italian'].map((lang) => (
                   <TouchableOpacity
                     key={lang}
                     onPress={() => setLanguage(lang)}
                     style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
                       borderRadius: 16,
                       backgroundColor: language === lang ? colors.primary : colors.card,
                       borderColor: language === lang ? colors.primary : colors.border,
                       borderWidth: 1,
-                      marginRight: 8,
                     }}
                   >
-                    <Text style={{ color: language === lang ? '#FFF' : colors.foreground, fontWeight: '500' }}>
+                    <Text style={{ color: language === lang ? '#FFF' : colors.foreground, fontSize: 13.5, fontFamily: 'Inter_500Medium' }}>
                       {lang}
                     </Text>
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
             </View>
           )}
 
@@ -926,25 +941,41 @@ export default function ImportScreen() {
                 <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Content *</Text>
                 {content.length > 0 && (
                   <Text style={[styles.wordCount, { color: colors.mutedForeground }]}>
-                    ~{countWords(content).toLocaleString()} words
+                    ~{contentWordCount.toLocaleString()} words
                   </Text>
                 )}
               </View>
-              <TextInput
-                style={[
-                  styles.contentInput,
-                  { backgroundColor: colors.card, borderColor: sourceFile ? `${colors.primary}50` : colors.border, color: colors.foreground },
-                ]}
-                placeholder="Paste your text here, or import a file above…"
-                placeholderTextColor={colors.mutedForeground}
-                value={content}
-                onChangeText={v => {
-                  setContent(v);
-                  if (sourceFile) setSourceFile(null); // manual edit breaks file link
-                }}
-                multiline
-                textAlignVertical="top"
-              />
+              {isLargeExtractedText ? (
+                <View style={[styles.pdfSummary, { backgroundColor: colors.card, borderColor: `${colors.primary}30` }]}>
+                  <View style={[styles.pdfSummaryIcon, { backgroundColor: `${colors.primary}15` }]}>
+                    <Feather name="book-open" size={20} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.pdfSummaryTitle, { color: colors.foreground }]}>
+                      Full text extracted & ready
+                    </Text>
+                    <Text style={[styles.pdfSummaryMeta, { color: colors.mutedForeground }]}>
+                      ~{contentWordCount.toLocaleString()} words · {estimatedSegmentCount.toLocaleString()} reading sections
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <TextInput
+                  style={[
+                    styles.contentInput,
+                    { backgroundColor: colors.card, borderColor: sourceFile ? `${colors.primary}50` : colors.border, color: colors.foreground },
+                  ]}
+                  placeholder="Paste your text here, or import a file above…"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={content}
+                  onChangeText={v => {
+                    setContent(v);
+                    if (sourceFile) setSourceFile(null); // manual edit breaks file link
+                  }}
+                  multiline
+                  textAlignVertical="top"
+                />
+              )}
             </Animated.View>
           )}
 
@@ -960,7 +991,7 @@ export default function ImportScreen() {
                     PDF ready to read
                   </Text>
                   <Text style={[styles.pdfSummaryMeta, { color: colors.mutedForeground }]}>
-                    {pdfData.pageCount} {pdfData.pageCount === 1 ? 'page' : 'pages'} · {Math.ceil(pdfData.pageCount / 3)} {Math.ceil(pdfData.pageCount / 3) === 1 ? 'section' : 'sections'} · ~{countWords(content).toLocaleString()} words
+                    {pdfData.pageCount} {pdfData.pageCount === 1 ? 'page' : 'pages'} · {Math.ceil(pdfData.pageCount / 3)} {Math.ceil(pdfData.pageCount / 3) === 1 ? 'section' : 'sections'} · ~{contentWordCount.toLocaleString()} words
                   </Text>
                 </View>
               </View>
@@ -994,11 +1025,11 @@ export default function ImportScreen() {
           )}
 
           {/* ── Segment preview (text-only books) ────────────────────── */}
-          {!pdfData && content.trim().length > 50 && (
+          {!pdfData && !isLargeExtractedText && estimatedSegmentCount > 0 && (
             <View style={[styles.previewBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Feather name="layers" size={14} color={colors.mutedForeground} />
               <Text style={[styles.previewText, { color: colors.mutedForeground }]}>
-                ~{Math.max(1, Math.ceil(splitIntoParagraphs(content).length / 5))} reading sections will be created
+                ~{estimatedSegmentCount} reading sections will be created
               </Text>
             </View>
           )}
@@ -1017,8 +1048,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 16,
   },
-  headerTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
-  addBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10, minWidth: 60, alignItems: 'center' },
+  headerCloseBtn: { minWidth: 64, alignItems: 'flex-start', justifyContent: 'center' },
+  headerTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold', textAlign: 'center' },
+  addBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 10, minWidth: 64, alignItems: 'center' },
   addBtnText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 60, gap: 18 },
 

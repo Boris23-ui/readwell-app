@@ -21,124 +21,233 @@ import { BookCard } from '@/components/BookCard';
 import { WhileYouWereAwayCard } from '@/components/WhileYouWereAwayCard';
 import { ReviewQueueCard } from '@/components/ReviewQueueCard';
 import { getXpProgressInLevel } from '@/utils/xp';
-
+import { createStarterBook, STARTER_BOOK_ID } from '@/utils/content';
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isWide = width >= 860;
-  const { profile, books, getTodayActivity } = useApp();
-  const { strategy, dueFlashcards } = useCoach();
-
+  const isCompact = width < 430;
+  const { profile, books, addBook, getTodayActivity } = useApp();
+  const { dueFlashcards } = useCoach();
 
   const todayActivity = getTodayActivity ? getTodayActivity() : null;
   const todayMinutes = Number.isFinite(todayActivity?.minutesRead)
     ? Math.max(0, todayActivity!.minutesRead)
     : 0;
-  const goalMinutes = Number.isFinite(profile?.dailyGoalMinutes) && profile.dailyGoalMinutes > 0
-    ? profile.dailyGoalMinutes
-    : 20;
+  const goalMinutes =
+    Number.isFinite(profile?.dailyGoalMinutes) && profile.dailyGoalMinutes > 0
+      ? profile.dailyGoalMinutes
+      : 20;
   const goalProgress = Math.min(1, todayMinutes / goalMinutes);
-  const currentBooks = (books || []).filter(b => b && b.status === 'in_progress');
-  const latestBook = currentBooks[0] ?? ((books && books.length > 0) ? books[0] : null);
+  const goalMet = todayMinutes >= goalMinutes;
+
+  const currentBooks = (books || []).filter((b) => b && b.status === 'in_progress');
+  const primaryBook = currentBooks[0] ?? (books && books.length > 0 ? books[0] : null);
+  const otherActiveBooks = currentBooks.slice(1);
+
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const greeting =
+    hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const displayName = (profile?.name || 'Reader').trim().split(' ')[0] || 'Reader';
+
   const xp = Number.isFinite(profile?.xp) ? Math.max(0, profile.xp) : 0;
   const xpProgress = getXpProgressInLevel(xp);
 
-  const topPad = Platform.OS === 'web' ? 44 : insets.top + 8;
+  const topPad = Platform.OS === 'web' ? 24 : insets.top + 10;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
-  const renderHeroCard = () => (
-    <Animated.View
-      entering={FadeInDown.duration(400)}
-      style={[styles.heroWrapper, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
-    >
-      <View
-        style={[
-          styles.heroFeltCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: `${colors.terracotta}55`,
-            shadowColor: colors.shadow,
-          },
-        ]}
+  const handleStartStarterBook = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const existing = books.find((b) => b.id === STARTER_BOOK_ID);
+    if (existing) {
+      router.push(`/reader/${existing.id}`);
+      return;
+    }
+    const starter = createStarterBook();
+    await addBook(starter);
+    router.push(`/reader/${starter.id}`);
+  };
+
+  const renderPrimaryReadingCard = () => {
+    if (!primaryBook) {
+      return (
+        <Animated.View
+          entering={FadeInDown.duration(350)}
+          style={[styles.heroWrapper, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
+        >
+          <View
+            style={[
+              styles.heroCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: `${colors.terracotta}55`,
+                shadowColor: colors.shadow,
+              },
+            ]}
+          >
+            <View style={[styles.heroIconWrap, { backgroundColor: `${colors.terracotta}16` }]}>
+              <Feather name="book-open" size={26} color={colors.terracotta} />
+            </View>
+            <Text style={[styles.heroTitle, { color: colors.foreground }]}>
+              Start your daily reading habit
+            </Text>
+            <Text style={[styles.heroSubtitle, { color: colors.mutedForeground }]}>
+              Import a PDF, paste an article, or jump right into a 3-minute starter passage with a quick AI check at the end.
+            </Text>
+
+            <View style={[styles.emptyCtaRow, isCompact && styles.emptyCtaColumn]}>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push('/import');
+                }}
+                style={[styles.primaryCta, isCompact && styles.ctaFullWidth, { backgroundColor: colors.honey }]}
+                activeOpacity={0.85}
+              >
+                <Feather name="plus" size={16} color="#1F1C18" />
+                <Text style={styles.primaryCtaText} numberOfLines={1}>Import a Book</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleStartStarterBook}
+                style={[
+                  styles.secondaryCta,
+                  isCompact && styles.ctaFullWidth,
+                  { backgroundColor: colors.cardFelt, borderColor: colors.border },
+                ]}
+                activeOpacity={0.85}
+              >
+                <Feather name="play" size={14} color={colors.terracotta} />
+                <Text style={[styles.secondaryCtaText, { color: colors.foreground }]} numberOfLines={1}>
+                  Try Starter Read
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animated.View>
+      );
+    }
+
+    const totalSegments =
+      primaryBook.segments.length || (primaryBook.pages ? primaryBook.pages.length : 1);
+    const completedSegments =
+      primaryBook.status === 'finished'
+        ? totalSegments
+        : Math.min(Math.max(0, primaryBook.currentSegmentIndex || 0), totalSegments);
+    const progressPct =
+      totalSegments > 0 ? Math.min(100, Math.round((completedSegments / totalSegments) * 100)) : 0;
+    const activeSeg =
+      primaryBook.segments[Math.min(completedSegments, Math.max(0, totalSegments - 1))];
+    const positionLabel =
+      primaryBook.status === 'finished'
+        ? 'Completed'
+        : primaryBook.sourceType === 'pdf' && primaryBook.pages?.length
+        ? `Page ${activeSeg?.pageStart ?? 1} of ${primaryBook.pages.length}`
+        : `Section ${Math.min(completedSegments + 1, totalSegments)} of ${totalSegments}`;
+
+    const accent = primaryBook.coverColor || colors.terracotta;
+
+    return (
+      <Animated.View
+        entering={FadeInDown.duration(350)}
+        style={[styles.heroWrapper, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
       >
-        <View style={styles.heroHeaderTag}>
-          <Text style={[styles.heroSeasonTag, { color: colors.terracotta }]}>
-            SEASON 1 · THE INTERACTIVE FLOOR
-          </Text>
-          <View style={[styles.heroLevelPill, { backgroundColor: `${colors.honey}33` }]}>
-            <Text style={[styles.heroLevelText, { color: colors.honeyDeep }]}>
-              LV {profile?.level ?? 1} · {greeting.toUpperCase()}
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push(`/reader/${primaryBook.id}`);
+          }}
+          activeOpacity={0.9}
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: `${accent}55`,
+              shadowColor: colors.shadow,
+            },
+          ]}
+        >
+          <View style={styles.heroTopRow}>
+            <View style={[styles.eyebrowPill, { backgroundColor: `${accent}18` }]}>
+              <Text style={[styles.eyebrowText, { color: accent }]}>
+                {primaryBook.status === 'finished' ? 'RECENTLY FINISHED' : 'CONTINUE READING'}
+              </Text>
+            </View>
+            <Text style={[styles.positionText, { color: colors.mutedForeground }]}>
+              {positionLabel}
             </Text>
           </View>
-        </View>
 
-        <Text style={[styles.heroTitle, { color: colors.foreground }]}>
-          Reading <Text style={{ color: colors.terracotta }}>Floor</Text>
-        </Text>
-
-        <Text style={[styles.heroParagraph, { color: colors.mutedForeground }]}>
-          One reader. Socratic checkpoints. Run a segment, hit the wall, dialogue with AI,
-          and conquer the quiz — every stage earned on the floor.
-        </Text>
-
-        {/* Duolingo / ADK The Grid Mini Dashboard */}
-        <View style={[styles.gridContainer, { backgroundColor: colors.muted }]}>
-          <View style={styles.gridHeader}>
-            <Text style={[styles.gridHeaderTitle, { color: colors.mutedForeground }]}>
-              THE LEARNING GRID
-            </Text>
-            <Text style={[styles.gridHeaderSub, { color: colors.mutedForeground }]}>
-              who decides next?
-            </Text>
-          </View>
-          <View style={styles.gridRow}>
-            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                Sequential
+          <View style={styles.heroBookRow}>
+            <View style={[styles.heroBookCover, { backgroundColor: accent }]}>
+              <Text style={styles.heroBookCoverLetter}>
+                {primaryBook.title[0]?.toUpperCase() ?? 'R'}
               </Text>
             </View>
-            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                Parallel
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={[styles.heroBookTitle, { color: colors.foreground }]} numberOfLines={2}>
+                {primaryBook.title}
               </Text>
-            </View>
-            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                Socratic
-              </Text>
-            </View>
-            <View style={[styles.gridChip, { backgroundColor: colors.card }]}>
-              <Text style={[styles.gridChipText, { color: colors.foreground }]}>
-                Dynamic
+              <Text style={[styles.heroBookAuthor, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {primaryBook.author || 'Imported reading'}
               </Text>
             </View>
           </View>
-        </View>
-      </View>
-    </Animated.View>
-  );
+
+          <View style={styles.heroProgressWrap}>
+            <View style={[styles.heroProgressTrack, { backgroundColor: colors.muted }]}>
+              <View
+                style={[
+                  styles.heroProgressFill,
+                  {
+                    backgroundColor: primaryBook.status === 'finished' ? colors.sageDeep : accent,
+                    width: `${progressPct}%` as any,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={[styles.heroProgressPct, { color: colors.mutedForeground }]}>
+              {progressPct}%
+            </Text>
+          </View>
+
+          <View style={[styles.primaryCtaFull, { backgroundColor: colors.honey }]}>
+            <Text style={styles.primaryCtaText}>
+              {primaryBook.status === 'finished'
+                ? 'Read Again'
+                : completedSegments > 0
+                ? 'Continue Reading'
+                : 'Start Reading'}
+            </Text>
+            <Feather name="arrow-right" size={16} color="#1F1C18" />
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
 
   const renderStatsRow = () => (
     <View style={[styles.statsRow, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}>
       {/* Streak Card */}
-      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(100).springify()}>
-        <View
+      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(80).springify()}>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/stats')}
+          activeOpacity={0.85}
           style={[
             styles.feltStatCard,
             {
               backgroundColor: colors.card,
-              borderColor: (profile?.streakCurrent ?? 0) > 0 ? `${colors.terracotta}66` : colors.border,
+              borderColor:
+                (profile?.streakCurrent ?? 0) > 0 ? `${colors.terracotta}66` : colors.border,
               shadowColor: colors.shadow,
             },
           ]}
         >
           <Feather
             name="zap"
-            size={22}
+            size={20}
             color={(profile?.streakCurrent ?? 0) > 0 ? colors.terracotta : colors.mutedForeground}
           />
           <Text style={[styles.statBigNum, { color: colors.foreground }]}>
@@ -147,26 +256,28 @@ export default function HomeScreen() {
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>
             DAY STREAK
           </Text>
-        </View>
+        </TouchableOpacity>
       </Animated.View>
 
       {/* Daily Goal Ring */}
-      <Animated.View style={{ flex: 1.2 }} entering={FadeInDown.delay(180).springify()}>
-        <View
+      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(140).springify()}>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/stats')}
+          activeOpacity={0.85}
           style={[
             styles.feltStatCard,
             {
               backgroundColor: colors.card,
-              borderColor: `${colors.honey}66`,
+              borderColor: goalMet ? `${colors.sageDeep}66` : `${colors.honey}66`,
               shadowColor: colors.shadow,
             },
           ]}
         >
           <ProgressRing
             progress={goalProgress}
-            size={76}
-            strokeWidth={7}
-            color={colors.honeyDeep}
+            size={width < 380 ? 60 : 68}
+            strokeWidth={6}
+            color={goalMet ? colors.sageDeep : colors.honeyDeep}
             trackColor={colors.muted}
           >
             <View style={styles.ringCenter}>
@@ -174,15 +285,22 @@ export default function HomeScreen() {
               <Text style={[styles.ringMinLabel, { color: colors.mutedForeground }]}>min</Text>
             </View>
           </ProgressRing>
-          <Text style={[styles.statLabelMono, { color: colors.mutedForeground, marginTop: 4 }]}>
-            GOAL: {goalMinutes}M
+          <Text
+            style={[
+              styles.statLabelMono,
+              { color: goalMet ? colors.sageDeep : colors.mutedForeground, marginTop: 4 },
+            ]}
+          >
+            {goalMet ? 'GOAL MET' : `GOAL ${goalMinutes}M`}
           </Text>
-        </View>
+        </TouchableOpacity>
       </Animated.View>
 
-      {/* Total XP */ }
-      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(260).springify()}>
-        <View
+      {/* Total XP */}
+      <Animated.View style={{ flex: 1 }} entering={FadeInDown.delay(200).springify()}>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/stats')}
+          activeOpacity={0.85}
           style={[
             styles.feltStatCard,
             {
@@ -195,19 +313,24 @@ export default function HomeScreen() {
           <Text style={[styles.statBigNum, { color: colors.slateDeep }]}>{xp}</Text>
           <Text style={[styles.statLabelMono, { color: colors.mutedForeground }]}>TOTAL XP</Text>
           <View style={[styles.xpTrack, { backgroundColor: colors.muted }]}>
-            <View style={[styles.xpFill, { width: `${xpProgress.percent * 100}%` as any }]} />
+            <View
+              style={[
+                styles.xpFill,
+                { width: `${xpProgress.percent * 100}%` as any, backgroundColor: colors.slateDeep },
+              ]}
+            />
           </View>
           <Text style={[styles.xpNextMono, { color: colors.mutedForeground }]}>
             {xpProgress.required - xpProgress.current} to Lv {(profile?.level ?? 1) + 1}
           </Text>
-        </View>
+        </TouchableOpacity>
       </Animated.View>
     </View>
   );
 
   const renderCoachBanner = () => (
     <Animated.View
-      entering={FadeInDown.delay(320).springify()}
+      entering={FadeInDown.delay(240).springify()}
       style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
     >
       <TouchableOpacity
@@ -222,37 +345,33 @@ export default function HomeScreen() {
             styles.coachBannerFelt,
             {
               backgroundColor: colors.card,
-              borderColor: `${colors.terracotta}55`,
+              borderColor: `${colors.terracotta}44`,
               shadowColor: colors.shadow,
             },
           ]}
         >
           <View style={[styles.coachAvatarCircle, { backgroundColor: `${colors.terracotta}18` }]}>
-            <Text style={{ fontSize: 24 }}>🦉</Text>
+            <Text style={{ fontSize: 22 }}>🦉</Text>
           </View>
 
           <View style={{ flex: 1, gap: 2 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={[styles.coachTitle, { color: colors.foreground }]}>
-                Socratic Coach
-              </Text>
-              <View style={[styles.coachVersionPill, { backgroundColor: colors.terracotta }]}>
-                <Text style={styles.coachVersionText}>v{strategy?.version || 1}</Text>
-              </View>
-            </View>
-            <Text style={[styles.coachSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-              {strategy?.preferredQuestionStyle || 'Scaffolded questions & memory reinforcement'}
+            <Text style={[styles.coachTitle, { color: colors.foreground }]}>
+              Reading Coach
+            </Text>
+            <Text style={[styles.coachSub, { color: colors.mutedForeground }]} numberOfLines={2}>
+              Discuss passages & review flashcards
             </Text>
           </View>
 
           <View style={styles.coachRightCol}>
             {dueFlashcards.length > 0 && (
               <View style={[styles.dueBadge, { backgroundColor: colors.destructive }]}>
-                <Text style={styles.dueBadgeText}>{dueFlashcards.length} DUE</Text>
+                <Text style={styles.dueBadgeText}>{dueFlashcards.length} due</Text>
               </View>
             )}
-            <View style={[styles.btnEnterMini, { backgroundColor: colors.honey }]}>
-              <Text style={styles.btnEnterMiniText}>CHAT ▸</Text>
+            <View style={[styles.btnEnterMini, { backgroundColor: `${colors.terracotta}15` }]}>
+              <Text style={[styles.btnEnterMiniText, { color: colors.terracotta }]}>Chat</Text>
+              <Feather name="chevron-right" size={14} color={colors.terracotta} />
             </View>
           </View>
         </View>
@@ -262,35 +381,30 @@ export default function HomeScreen() {
 
   const renderReviewCard = () => (
     <Animated.View
-      entering={FadeInDown.delay(380).springify()}
+      entering={FadeInDown.delay(280).springify()}
       style={[isWide ? { paddingHorizontal: 0, marginBottom: 0 } : styles.section]}
     >
       <ReviewQueueCard />
     </Animated.View>
   );
 
-  const renderSprintSection = () => (
-    <View style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}>
-      <View style={styles.sectionHeaderRow}>
-        <Text style={[styles.displayHeading, { color: colors.foreground }]}>
-          Pick tonight's sprint
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push('/import')}
-          style={[styles.importPill, { borderColor: `${colors.terracotta}66` }]}
-        >
-          <Feather name="plus" size={14} color={colors.terracotta} />
-          <Text style={[styles.importPillText, { color: colors.terracotta }]}>IMPORT</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>
-        Every reading stage earned on the floor.
-      </Text>
-
-      {currentBooks.length > 0 ? (
-        <View style={{ marginTop: 14 }}>
-          {currentBooks.map((book, idx) => (
+  const renderUpNextSection = () => {
+    if (otherActiveBooks.length === 0) return null;
+    return (
+      <Animated.View
+        entering={FadeInRight.delay(260).springify()}
+        style={[styles.section, isWide && { paddingHorizontal: 0, marginBottom: 0 }]}
+      >
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.displayHeading, { color: colors.foreground }]}>
+            Also in progress
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/(tabs)/library')}>
+            <Text style={[styles.seeAllText, { color: colors.terracotta }]}>See library</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ marginTop: 12 }}>
+          {otherActiveBooks.map((book, idx) => (
             <BookCard
               key={book?.id || `curr-${idx}`}
               book={book}
@@ -301,47 +415,9 @@ export default function HomeScreen() {
             />
           ))}
         </View>
-      ) : latestBook ? (
-        <View style={{ marginTop: 14 }}>
-          <BookCard
-            book={latestBook}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              if (latestBook?.id) router.push(`/reader/${latestBook.id}`);
-            }}
-          />
-        </View>
-      ) : (
-        <Animated.View entering={FadeInRight.delay(350).springify()} style={{ marginTop: 14 }}>
-          <TouchableOpacity
-            onPress={() => router.push('/import')}
-            style={[
-              styles.emptySprintCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-            activeOpacity={0.8}
-          >
-            <View
-              style={[styles.emptyIconCircle, { backgroundColor: `${colors.terracotta}18` }]}
-            >
-              <Feather name="book-open" size={28} color={colors.terracotta} />
-            </View>
-            <Text style={[styles.emptySprintTitle, { color: colors.foreground }]}>
-              No documents on the floor
-            </Text>
-            <Text style={[styles.emptySprintSub, { color: colors.mutedForeground }]}>
-              Import a PDF or paste text to generate your first Socratic reading stages.
-            </Text>
-            <View style={[styles.btnFeltAction, { backgroundColor: colors.honey }]}>
-              <Text style={styles.btnFeltActionText}>IMPORT DOCUMENT ▸</Text>
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
-    </View>
-  );
-
-
+      </Animated.View>
+    );
+  };
 
   return (
     <ScrollView
@@ -350,67 +426,57 @@ export default function HomeScreen() {
         styles.scrollContent,
         {
           paddingTop: topPad,
-          paddingBottom: botPad + 130,
+          paddingBottom: botPad + 110,
         },
       ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Pattern Kitchen Style Top Action Bar ── */}
+      {/* ── Greeting Header ── */}
       <View style={styles.topBar}>
-        <View style={styles.tabToggleGroup}>
-          <TouchableOpacity
-            style={[styles.tabBadgeActive, { backgroundColor: colors.terracotta }]}
-            activeOpacity={0.9}
-          >
-            <Text style={styles.tabBadgeActiveTitle}>THE FLOOR</Text>
-            <Text style={styles.tabBadgeActiveSub}>Season 1 · active sprints</Text>
-          </TouchableOpacity>
-
+        <View style={{ flex: 1, gap: 2 }}>
+          <View style={styles.greetingMetaRow}>
+            <Text style={[styles.greetingEyebrow, { color: colors.mutedForeground }]}>
+              {greeting}
+            </Text>
+            <View style={[styles.levelPill, { backgroundColor: `${colors.honey}33` }]}>
+              <Text style={[styles.levelPillText, { color: colors.honeyDeep }]}>
+                Lv {profile?.level ?? 1}
+              </Text>
+            </View>
+          </View>
+          <Text style={[styles.greetingTitle, { color: colors.foreground }]} numberOfLines={1}>
+            {displayName}
+          </Text>
         </View>
 
-        <View style={styles.quickPillsRow}>
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/(tabs)/stats');
-            }}
-            style={[styles.dashedPill, { borderColor: `${colors.honeyDeep}88` }]}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.dashedPillText, { color: colors.honeyDeep }]}>
-              🗺️ CIRCUIT
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/(tabs)/messages');
-            }}
-            style={[styles.dashedPill, { borderColor: `${colors.terracotta}88` }]}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.dashedPillText, { color: colors.terracotta }]}>
-              ⚖️ COACH
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/import');
+          }}
+          style={[
+            styles.importHeaderBtn,
+            { borderColor: `${colors.terracotta}66`, backgroundColor: `${colors.terracotta}10` },
+          ]}
+          activeOpacity={0.8}
+        >
+          <Feather name="plus" size={15} color={colors.terracotta} />
+          <Text style={[styles.importHeaderBtnText, { color: colors.terracotta }]}>Import</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Responsive Dashboard Area ── */}
       {isWide ? (
         <View style={styles.dashboardRow}>
-          {/* Left Column: Sprints & Reading Core */}
           <View style={styles.dashboardLeftCol}>
-            {renderHeroCard()}
-            {renderSprintSection()}
+            {renderPrimaryReadingCard()}
             <WhileYouWereAwayCard
               style={{ paddingHorizontal: 0, marginBottom: 0 }}
               onOpenCoach={() => router.push('/(tabs)/messages')}
             />
+            {renderUpNextSection()}
           </View>
 
-          {/* Right Column: Telemetry, Socratic Coach & Curations */}
           <View style={styles.dashboardRightCol}>
             {renderStatsRow()}
             {renderCoachBanner()}
@@ -418,36 +484,70 @@ export default function HomeScreen() {
           </View>
         </View>
       ) : (
-        /* Mobile Linear Order */
         <>
-          {renderHeroCard()}
-          <WhileYouWereAwayCard onOpenCoach={() => router.push('/(tabs)/messages')} />
+          {renderPrimaryReadingCard()}
           {renderStatsRow()}
-          {renderCoachBanner()}
+          <WhileYouWereAwayCard onOpenCoach={() => router.push('/(tabs)/messages')} />
           {renderReviewCard()}
-          {renderSprintSection()}
-
+          {renderCoachBanner()}
+          {renderUpNextSection()}
         </>
       )}
-
-      {/* Footer Pattern Mantra */}
-      <View style={styles.footerNote}>
-        <Text style={[styles.footerNoteText, { color: colors.mutedForeground }]}>
-          CLICK-DRIVEN · REPLAY-EXACT · SOCRATIC RETENTION — NOTHING MOVES UNTIL YOU DO
-        </Text>
-      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   scrollContent: {
     maxWidth: 1200,
     width: '100%',
     marginHorizontal: 'auto',
+  },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 18,
+    gap: 12,
+  },
+  greetingMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  greetingEyebrow: {
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
+  },
+  levelPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  levelPillText: {
+    fontSize: 11,
+    fontFamily: 'Inter_700Bold',
+  },
+  greetingTitle: {
+    fontSize: 28,
+    fontFamily: 'Newsreader_700Bold',
+    lineHeight: 34,
+    letterSpacing: -0.3,
+  },
+  importHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  importHeaderBtnText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
   },
   dashboardRow: {
     flexDirection: 'row',
@@ -458,193 +558,197 @@ const styles = StyleSheet.create({
   },
   dashboardLeftCol: {
     flex: 1.15,
-    gap: 24,
+    gap: 20,
   },
   dashboardRightCol: {
     flex: 0.85,
-    gap: 24,
-  },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  tabToggleGroup: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(150, 130, 110, 0.12)',
-    borderRadius: 18,
-    padding: 3,
-    gap: 3,
-  },
-  tabBadgeActive: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 15,
-  },
-  tabBadgeActiveTitle: {
-    color: '#FFFDF8',
-    fontSize: 11.5,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1,
-  },
-  tabBadgeActiveSub: {
-    color: 'rgba(255, 253, 248, 0.8)',
-    fontSize: 9.5,
-    fontFamily: 'Inter_400Regular',
-  },
-  tabBadgeInactive: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 15,
-  },
-  tabBadgeInactiveTitle: {
-    fontSize: 11.5,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1,
-  },
-  tabBadgeInactiveSub: {
-    fontSize: 9.5,
-    fontFamily: 'Inter_400Regular',
-  },
-  quickPillsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dashedPill: {
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  dashedPillText: {
-    fontSize: 10.5,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.8,
+    gap: 20,
   },
   heroWrapper: {
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 18,
   },
-  heroFeltCard: {
-    borderRadius: 26,
-    borderWidth: 2,
-    padding: 22,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
+  heroCard: {
+    borderRadius: 24,
+    borderWidth: 1.5,
+    padding: 20,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
     elevation: 4,
-    gap: 12,
+    gap: 14,
   },
-  heroHeaderTag: {
+  heroIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontFamily: 'Newsreader_700Bold',
+    lineHeight: 30,
+  },
+  heroSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 21,
+  },
+  emptyCtaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 4,
+  },
+  emptyCtaColumn: {
+    flexDirection: 'column',
+  },
+  ctaFullWidth: {
+    flex: 0,
+    width: '100%',
+  },
+  primaryCta: {
+    flex: 1,
+    minWidth: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 13,
+    borderRadius: 14,
+  },
+  primaryCtaFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginTop: 2,
+  },
+  primaryCtaText: {
+    color: '#1F1C18',
+    fontSize: 14.5,
+    fontFamily: 'Inter_700Bold',
+  },
+  secondaryCta: {
+    flex: 1,
+    minWidth: 140,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  secondaryCtaText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
-  heroSeasonTag: {
-    fontSize: 11,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.2,
-  },
-  heroLevelPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  eyebrowPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 8,
   },
-  heroLevelText: {
-    fontSize: 10,
+  eyebrowText: {
+    fontSize: 10.5,
     fontFamily: 'Inter_700Bold',
     letterSpacing: 0.8,
   },
-  heroTitle: {
-    fontSize: 34,
+  positionText: {
+    fontSize: 12,
+    fontFamily: 'Inter_500Medium',
+  },
+  heroBookRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  heroBookCover: {
+    width: 54,
+    height: 72,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBookCoverLetter: {
+    color: '#FFFDF8',
+    fontSize: 26,
     fontFamily: 'Newsreader_700Bold',
-    lineHeight: 40,
-    letterSpacing: -0.5,
   },
-  heroParagraph: {
-    fontSize: 14,
+  heroBookTitle: {
+    fontSize: 20,
+    fontFamily: 'Newsreader_700Bold',
+    lineHeight: 25,
+  },
+  heroBookAuthor: {
+    fontSize: 13.5,
     fontFamily: 'Inter_400Regular',
-    lineHeight: 22,
   },
-  gridContainer: {
-    borderRadius: 16,
-    padding: 12,
-    marginTop: 4,
-    gap: 8,
-  },
-  gridHeader: {
+  heroProgressWrap: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
   },
-  gridHeaderTitle: {
-    fontSize: 10.5,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.1,
-  },
-  gridHeaderSub: {
-    fontSize: 10,
-    fontFamily: 'Inter_400Regular',
-  },
-  gridRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  gridChip: {
+  heroProgressTrack: {
     flex: 1,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignItems: 'center',
+    height: 7,
+    borderRadius: 3.5,
+    overflow: 'hidden',
   },
-  gridChipText: {
-    fontSize: 10.5,
+  heroProgressFill: {
+    height: '100%',
+    borderRadius: 3.5,
+  },
+  heroProgressPct: {
+    fontSize: 12,
     fontFamily: 'Inter_600SemiBold',
+    minWidth: 34,
+    textAlign: 'right',
   },
   statsRow: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 18,
   },
   feltStatCard: {
-    borderRadius: 22,
-    borderWidth: 2,
-    padding: 14,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 13,
     alignItems: 'center',
-    gap: 6,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 118,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
     shadowRadius: 10,
-    elevation: 3,
+    elevation: 2,
   },
   statBigNum: {
-    fontSize: 26,
+    fontSize: 24,
     fontFamily: 'Newsreader_700Bold',
-    lineHeight: 30,
+    lineHeight: 28,
   },
   statLabelMono: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.8,
+    letterSpacing: 0.7,
+    textAlign: 'center',
   },
-  ringCenter: {
-    alignItems: 'center',
-  },
-  ringNum: {
-    fontSize: 18,
-    fontFamily: 'Newsreader_700Bold',
-  },
-  ringMinLabel: {
-    fontSize: 10,
-    fontFamily: 'Inter_500Medium',
-    marginTop: -3,
-  },
+  ringCenter: { alignItems: 'center' },
+  ringNum: { fontSize: 17, fontFamily: 'Newsreader_700Bold' },
+  ringMinLabel: { fontSize: 10, fontFamily: 'Inter_500Medium', marginTop: -3 },
   xpTrack: {
     width: '100%',
     height: 5,
@@ -654,7 +758,6 @@ const styles = StyleSheet.create({
   },
   xpFill: {
     height: '100%',
-    backgroundColor: '#52789F',
     borderRadius: 2.5,
   },
   xpNextMono: {
@@ -664,7 +767,7 @@ const styles = StyleSheet.create({
   },
   section: {
     paddingHorizontal: 20,
-    marginBottom: 26,
+    marginBottom: 18,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -672,46 +775,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   displayHeading: {
-    fontSize: 22,
+    fontSize: 20,
     fontFamily: 'Newsreader_700Bold',
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
-  importPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  importPillText: {
-    fontSize: 10.5,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.8,
-  },
-  sectionSubtitle: {
-    fontSize: 13.5,
-    fontFamily: 'Inter_400Regular',
-    marginTop: 3,
+  seeAllText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
   },
   coachBannerFelt: {
-    borderRadius: 22,
-    borderWidth: 2,
-    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 15,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 3,
+    gap: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 2,
   },
   coachAvatarCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -719,19 +806,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Newsreader_700Bold',
   },
-  coachVersionPill: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  coachVersionText: {
-    color: '#FFFDF8',
-    fontSize: 10,
-    fontFamily: 'Inter_700Bold',
-  },
   coachSub: {
     fontSize: 12.5,
     fontFamily: 'Inter_400Regular',
+    lineHeight: 17,
   },
   coachRightCol: {
     flexDirection: 'row',
@@ -745,108 +823,19 @@ const styles = StyleSheet.create({
   },
   dueBadgeText: {
     color: '#FFF',
-    fontSize: 9.5,
+    fontSize: 10,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.6,
   },
   btnEnterMini: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 10,
   },
   btnEnterMiniText: {
-    color: '#1F1C18',
-    fontSize: 11,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.9,
-  },
-  emptySprintCard: {
-    borderRadius: 22,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    padding: 30,
-    alignItems: 'center',
-    gap: 10,
-  },
-  emptyIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptySprintTitle: {
-    fontSize: 18,
-    fontFamily: 'Newsreader_700Bold',
-  },
-  emptySprintSub: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-    textAlign: 'center',
-    lineHeight: 19,
-    maxWidth: 280,
-  },
-  btnFeltAction: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 14,
-    marginTop: 6,
-  },
-  btnFeltActionText: {
-    color: '#1F1C18',
-    fontSize: 12,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.1,
-  },
-  recFeltCard: {
-    width: 230,
-    borderRadius: 20,
-    borderWidth: 2,
-    padding: 16,
-    gap: 8,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  recTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  recIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recTopicMono: {
-    fontSize: 10.5,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 0.9,
-  },
-  recTitleText: {
-    fontSize: 15,
-    fontFamily: 'Newsreader_700Bold',
-    lineHeight: 20,
-  },
-  recReasonText: {
     fontSize: 12.5,
-    fontFamily: 'Inter_400Regular',
-    lineHeight: 18,
-  },
-  footerNote: {
-    paddingHorizontal: 30,
-    paddingTop: 10,
-    paddingBottom: 20,
-  },
-  footerNoteText: {
-    fontSize: 10.5,
     fontFamily: 'Inter_600SemiBold',
-    textAlign: 'center',
-    letterSpacing: 1.2,
-    lineHeight: 16,
-    opacity: 0.7,
   },
 });

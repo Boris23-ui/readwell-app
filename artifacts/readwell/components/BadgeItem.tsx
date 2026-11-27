@@ -45,7 +45,8 @@ export function BadgeItem({ badgeKey, earned = true }: Props) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    width: 76,
+    width: '100%',
+    maxWidth: 82,
     alignItems: 'center',
     gap: 6,
   },

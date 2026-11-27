@@ -18,7 +18,7 @@ import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
 import { generateQuiz, evaluateReflection } from '@/utils/api';
 import { Question, Quiz } from '@/types';
-import { calculateSessionXp } from '@/utils/xp';
+import { calculateReadingMinutes, calculateSessionXp } from '@/utils/xp';
 import { isTextQualityTooLow } from '@/utils/content';
 import { addMissedQuestion } from '@/utils/reviewQueue';
 
@@ -75,7 +75,7 @@ export default function QuizScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, profile } = useApp();
+  const { getBookById, profile, cacheSegmentQuiz, updateBook, getTodayActivity } = useApp();
   const book = getBookById(bookId ?? '');
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -119,19 +119,29 @@ export default function QuizScreen() {
 
 
 
+    let cancelled = false;
+
     // Pass ML inputs: comprehensionScore, secondsRead, wordCount, complexity
     const comprehensionScore = profile.comprehensionScore ?? 0;
     const complexity = book.complexityIndex || 1.0;
-    
+
     generateQuiz(segmentText, profile.readingLevel ?? 'intermediate', comprehensionScore, secondsRead, wordCount, complexity)
       .then(data => {
-        const q: Quiz = { questions: data.questions };
+        if (cancelled) return;
+        const q: Quiz = {
+          questions: data.questions,
+          complexityIndex: data.complexityIndex,
+        };
         setQuiz(q);
         setAnswers(new Array(data.questions.length).fill(null));
         setLoading(false);
-
+        cacheSegmentQuiz(book.id, segmentIndex, q).catch(console.warn);
+        if (typeof data.complexityIndex === 'number' && Number.isFinite(data.complexityIndex)) {
+          updateBook(book.id, { complexityIndex: data.complexityIndex }).catch(console.warn);
+        }
       })
       .catch(err => {
+        if (cancelled) return;
         console.error('Quiz generation error:', err);
         const error = err as QuizGenerationError;
         if (error?.code === 'TEXT_TOO_SHORT') {
@@ -142,6 +152,10 @@ export default function QuizScreen() {
         setLoadErrorCode(error?.code);
         setLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [book, segmentIndex, bookId, profile.readingLevel, retryNonce]);
 
   if (!book) {
@@ -159,19 +173,31 @@ export default function QuizScreen() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} size="large" />
-        <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-          Generating your quiz...
+        <Text style={[styles.loadingText, { color: colors.foreground }]}>
+          Building your comprehension check...
         </Text>
         <Text style={[styles.loadingSub, { color: colors.mutedForeground }]}>
-          AI is reading your segment
+          Reading your passage for grounded questions
         </Text>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.cancelLoadingBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.link, { color: colors.mutedForeground }]}>Cancel</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   const handleContinueReading = () => {
-    const minutesRead = Math.floor(secondsRead / 60);
-    const xpEarned = calculateSessionXp(minutesRead, 0, 0, false);
+    const minutesRead = calculateReadingMinutes(secondsRead);
+    const todayMinutes = getTodayActivity()?.minutesRead ?? 0;
+    const willMeetGoal =
+      todayMinutes < profile.dailyGoalMinutes &&
+      todayMinutes + minutesRead >= profile.dailyGoalMinutes;
+    const isBookFinished = segmentIndex + 1 >= book.segments.length;
+    const xpEarned = calculateSessionXp(minutesRead, 0, 0, willMeetGoal, isBookFinished);
     router.replace({
       pathname: '/session-summary/[bookId]',
       params: {
@@ -181,14 +207,14 @@ export default function QuizScreen() {
         total: '0',
         xpEarned: String(xpEarned),
         secondsRead: String(secondsRead),
-        complexityIndex: '1.0',
+        complexityIndex: String(book.complexityIndex || 1.0),
+        skipped: 'true',
       },
     });
   };
 
   if (loadError || !quiz) {
     const isQualityError = loadError.startsWith('Text quality too low');
-    const isGenerationFailed = loadErrorCode === 'QUIZ_GENERATION_FAILED';
     const isRetryableError =
       !isQualityError &&
       RETRYABLE_QUIZ_ERROR_CODES.has(loadErrorCode ?? '');
@@ -202,47 +228,39 @@ export default function QuizScreen() {
         <Text style={[styles.errorTxt, { color: colors.foreground }]}>
           {loadError || 'Failed to load quiz'}
         </Text>
-        {isQualityError ? (
-          <>
-            <TouchableOpacity
-              onPress={handleContinueReading}
-              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-            >
-              <Text style={styles.retryBtnText}>Continue reading</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.back()}>
-              <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            {isRetryableError && (
-              <TouchableOpacity
-                onPress={() => {
-                  setQuiz(null);
-                  setLoadError('');
-                  setLoadErrorCode(undefined);
-                  setLoading(true);
-                  setRetryNonce((value) => value + 1);
-                }}
-                style={[styles.retryBtn, { backgroundColor: colors.primary, marginBottom: isGenerationFailed ? 12 : 0 }]}
-              >
-                <Text style={styles.retryBtnText}>Retry</Text>
-              </TouchableOpacity>
-            )}
-            {isGenerationFailed && (
-              <TouchableOpacity
-                onPress={handleContinueReading}
-                style={[styles.retryBtn, { backgroundColor: colors.muted }]}
-              >
-                <Text style={[styles.retryBtnText, { color: colors.foreground }]}>Continue reading</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => router.back()} style={{ marginTop: isGenerationFailed ? 12 : 0 }}>
-              <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
-            </TouchableOpacity>
-          </>
+        {isRetryableError && (
+          <TouchableOpacity
+            onPress={() => {
+              setQuiz(null);
+              setLoadError('');
+              setLoadErrorCode(undefined);
+              setLoading(true);
+              setRetryNonce((value) => value + 1);
+            }}
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.retryBtnText}>Retry Quiz</Text>
+          </TouchableOpacity>
         )}
+        <TouchableOpacity
+          onPress={handleContinueReading}
+          style={[
+            styles.retryBtn,
+            { backgroundColor: isRetryableError ? colors.muted : colors.primary },
+          ]}
+        >
+          <Text
+            style={[
+              styles.retryBtnText,
+              isRetryableError && { color: colors.foreground },
+            ]}
+          >
+            Continue Reading
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={[styles.link, { color: colors.mutedForeground }]}>Go back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -292,8 +310,20 @@ export default function QuizScreen() {
         }
       });
 
-      const minutesRead = Math.floor(secondsRead / 60);
-      const xpEarned = calculateSessionXp(minutesRead, score, totalQ - 1, false); // -1 for open-ended
+      const minutesRead = calculateReadingMinutes(secondsRead);
+      const todayMinutes = getTodayActivity()?.minutesRead ?? 0;
+      const willMeetGoal =
+        todayMinutes < profile.dailyGoalMinutes &&
+        todayMinutes + minutesRead >= profile.dailyGoalMinutes;
+      const isBookFinished = segmentIndex + 1 >= book.segments.length;
+      const mcqCount = quiz.questions.filter((q) => !q.isOpenEnded).length;
+      const xpEarned = calculateSessionXp(
+        minutesRead,
+        score,
+        mcqCount,
+        willMeetGoal,
+        isBookFinished,
+      );
 
       router.replace({
         pathname: '/session-summary/[bookId]',
@@ -326,22 +356,22 @@ export default function QuizScreen() {
   const isCorrect = !question.isOpenEnded && currentAnswer === question.correctIndex;
   const canReveal = question.isOpenEnded ? freeText.trim().length > 0 : currentAnswer !== null;
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top + 8;
+  const topPad = Platform.OS === 'web' ? 24 : insets.top + 8;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom + 12;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Pattern Kitchen Stage 3: The Taste Test Header */}
+      {/* Header */}
       <View style={[styles.header, { paddingTop: topPad }]}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Feather name="x" size={22} color={colors.foreground} />
         </TouchableOpacity>
-        <View style={{ alignItems: 'center' }}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            STAGE {segmentIndex + 1} · THE TASTE TEST
+        <View style={{ alignItems: 'center', flex: 1, paddingHorizontal: 12 }}>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
+            Comprehension Check
           </Text>
-          <Text style={[styles.headerSubMono, { color: colors.mutedForeground }]}>
-            CRITIC REVIEW · LOOP + CHECKPOINT
+          <Text style={[styles.headerSubMono, { color: colors.mutedForeground }]} numberOfLines={1}>
+            Section {segmentIndex + 1} · {book.title}
           </Text>
         </View>
         <Text style={[styles.qNum, { color: colors.mutedForeground }]}>
@@ -361,8 +391,8 @@ export default function QuizScreen() {
                   i < currentQ
                     ? colors.sageDeep
                     : i === currentQ
-                    ? book.coverColor
-                    : colors.muted,
+                      ? book.coverColor
+                      : colors.muted,
               },
             ]}
           />
@@ -382,10 +412,10 @@ export default function QuizScreen() {
               {question.type === 'recall'
                 ? 'Recall'
                 : question.type === 'vocabulary'
-                ? 'Vocabulary'
-                : question.type === 'inference'
-                ? 'Inference'
-                : 'Reflect'}
+                  ? 'Vocabulary'
+                  : question.type === 'inference'
+                    ? 'Inference'
+                    : 'Reflect'}
             </Text>
           </View>
 
@@ -462,6 +492,31 @@ export default function QuizScreen() {
           {/* Explanation and Evidence */}
           {revealed && !question.isOpenEnded && (
             <View style={{ gap: 12, marginTop: 16 }}>
+              <View
+                style={[
+                  styles.feedbackBanner,
+                  {
+                    backgroundColor: isCorrect ? `${colors.sage}22` : `${colors.honey}26`,
+                    borderColor: isCorrect ? `${colors.sageDeep}44` : `${colors.honeyDeep}44`,
+                  },
+                ]}
+              >
+                <Feather
+                  name={isCorrect ? 'check-circle' : 'compass'}
+                  size={16}
+                  color={isCorrect ? colors.sageDeep : colors.honeyDeep}
+                />
+                <Text
+                  style={[
+                    styles.feedbackBannerText,
+                    { color: isCorrect ? colors.sageDeep : colors.honeyDeep },
+                  ]}
+                >
+                  {isCorrect
+                    ? 'Great catch — you nailed that detail.'
+                    : "Let's look back at that part together."}
+                </Text>
+              </View>
               {question.explanation && (
                 <View style={[styles.evidenceBox, { backgroundColor: `${colors.sage}15`, borderColor: `${colors.sageDeep}40` }]}>
                   <Feather name="info" size={14} color={colors.sageDeep} />
@@ -513,7 +568,7 @@ export default function QuizScreen() {
             activeOpacity={0.85}
           >
             <Text style={[styles.footerBtnText, { color: canReveal ? '#1F1C18' : colors.mutedForeground }]}>
-              EVALUATE DISH ▸
+              {question.isOpenEnded ? 'Submit Reflection' : 'Check Answer'}
             </Text>
           </TouchableOpacity>
         ) : (
@@ -523,7 +578,7 @@ export default function QuizScreen() {
             activeOpacity={0.85}
           >
             <Text style={[styles.footerBtnText, { color: '#1F1C18' }]}>
-              {isLast ? 'ADVANCE TO EXPEDITION SUMMARY ▸' : 'NEXT CHECKPOINT ▸'}
+              {isLast ? 'See Results' : 'Next Question'}
             </Text>
             <Feather name="arrow-right" size={18} color="#1F1C18" />
           </TouchableOpacity>
@@ -538,8 +593,15 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, padding: 24 },
   errorTxt: { fontSize: 16, fontFamily: 'Inter_500Medium', textAlign: 'center' },
   link: { fontSize: 15, fontFamily: 'Inter_500Medium' },
-  loadingText: { fontSize: 16, fontFamily: 'Inter_500Medium', marginTop: 12 },
-  loadingSub: { fontSize: 13, fontFamily: 'Inter_400Regular' },
+  loadingText: { fontSize: 16, fontFamily: 'Inter_600SemiBold', marginTop: 12, textAlign: 'center' },
+  loadingSub: { fontSize: 13.5, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  cancelLoadingBtn: {
+    marginTop: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
   retryBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
   retryBtnText: { color: '#FFF', fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   header: {
@@ -589,6 +651,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   evidenceText: { flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular', lineHeight: 20, fontStyle: 'italic' },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  feedbackBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
   footer: { padding: 16, borderTopWidth: 1 },
   footerBtn: {
     flexDirection: 'row',

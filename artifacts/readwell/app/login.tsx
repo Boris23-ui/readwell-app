@@ -138,7 +138,7 @@ export default function LoginScreen() {
           <View style={styles.seasonTagRow}>
             <View style={[styles.seasonPill, { backgroundColor: `${colors.terracotta}18` }]}>
               <Text style={[styles.seasonPillText, { color: colors.terracotta }]}>
-                SEASON 1 · SOCRATIC FLOOR
+                YOUR AI READING COMPANION
               </Text>
             </View>
           </View>
@@ -152,7 +152,7 @@ export default function LoginScreen() {
               Read<Text style={{ color: colors.terracotta }}>Well</Text>
             </Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              One reader. Socratic checkpoints. Conquer reading stages with AI pedagogical feedback.
+              Turn any book, PDF, or article into a daily reading habit — with quick comprehension checks that help you remember what you read.
             </Text>
           </View>
 
@@ -262,23 +262,27 @@ export default function LoginScreen() {
 
           {/* Guest Mode */}
           <TouchableOpacity
-            style={styles.guestButton}
+            style={[styles.guestButton, { borderColor: colors.border, backgroundColor: `${colors.muted}66` }]}
             onPress={handleGuestMode}
             disabled={isGuestLoading}
+            activeOpacity={0.8}
           >
             {isGuestLoading ? (
-              <ActivityIndicator color={colors.mutedForeground} size="small" />
+              <ActivityIndicator color={colors.foreground} size="small" />
             ) : (
-              <Text style={[styles.guestButtonText, { color: colors.mutedForeground }]}>
-                Continue as Guest Reader
-              </Text>
+              <>
+                <Feather name="user" size={15} color={colors.foreground} />
+                <Text style={[styles.guestButtonText, { color: colors.foreground }]}>
+                  Continue as Guest Reader
+                </Text>
+              </>
             )}
           </TouchableOpacity>
 
           {/* Developer Quick Login */}
           {__DEV__ && (
             <TouchableOpacity
-              style={[styles.devButton, { backgroundColor: `${colors.terracotta}18` }]}
+              style={[styles.devButton, { backgroundColor: 'transparent', borderColor: colors.border }]}
               onPress={async () => {
                 try {
                   await devBypassLogin();
@@ -287,9 +291,10 @@ export default function LoginScreen() {
                   Alert.alert('Dev Login Error', 'Could not bypass login');
                 }
               }}
+              activeOpacity={0.75}
             >
-              <Feather name="code" size={14} color={colors.terracotta} />
-              <Text style={[styles.devButtonText, { color: colors.terracotta }]}>
+              <Feather name="code" size={13} color={colors.mutedForeground} />
+              <Text style={[styles.devButtonText, { color: colors.mutedForeground }]}>
                 Developer Quick Login
               </Text>
             </TouchableOpacity>
@@ -455,25 +460,32 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_500Medium',
   },
   guestButton: {
-    marginTop: 18,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  guestButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-  },
-  devButton: {
-    marginTop: 20,
+    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     paddingVertical: 12,
     borderRadius: 12,
-    gap: 8,
+    borderWidth: 1,
+  },
+  guestButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  devButton: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    gap: 6,
   },
   devButtonText: {
-    fontSize: 13,
-    fontFamily: 'Inter_600SemiBold',
+    fontSize: 12.5,
+    fontFamily: 'Inter_500Medium',
   },
 });

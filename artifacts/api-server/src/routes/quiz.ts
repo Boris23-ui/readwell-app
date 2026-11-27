@@ -8,15 +8,39 @@ import {
 } from "./quizValidation";
 import { computePageConfidence } from "./pdf";
 import { evaluateComprehension } from "../lib/ml";
-import { aiGateway } from "../lib/aiGateway";
+import { aiGateway, AIGatewayError } from "../lib/aiGateway";
 
 const router = Router();
 
 const MAX_PASSAGE_CHARS = 12_000;
 const MAX_REQUESTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+const QUIZ_CACHE_TTL_MS = 60 * 60 * 1000;
+const QUIZ_CACHE_MAX_SIZE = 100;
 
 const requestHistory = new Map<string, number[]>();
+const validatedQuizCache = new Map<
+  string,
+  { value: GenerateQuizResponse; expiresAt: number }
+>();
+
+function getCachedQuiz(key: string): GenerateQuizResponse | null {
+  const entry = validatedQuizCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    validatedQuizCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+function setCachedQuiz(key: string, value: GenerateQuizResponse): void {
+  if (validatedQuizCache.size >= QUIZ_CACHE_MAX_SIZE) {
+    const oldest = validatedQuizCache.keys().next().value;
+    if (oldest !== undefined) validatedQuizCache.delete(oldest);
+  }
+  validatedQuizCache.set(key, { value, expiresAt: Date.now() + QUIZ_CACHE_TTL_MS });
+}
 
 function getRequestKey(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
@@ -42,24 +66,10 @@ function consumeRateLimit(key: string): boolean {
   return true;
 }
 
-function getErrorStatus(error: unknown): number | undefined {
-  if (typeof error === "object" && error !== null) {
-    const record = error as Record<string, unknown>;
-    for (const key of ["status", "statusCode", "code"] as const) {
-      if (!(key in record)) continue;
-      const value = record[key];
-      const status = typeof value === "number" ? value : Number(value);
-      if (Number.isInteger(status) && status >= 400 && status <= 599) {
-        return status;
-      }
-    }
-  }
-
-  const message = error instanceof Error ? error.message : String(error);
-  const statusMatch = message.match(/\b(408|429|500|502|503|504)\b/);
-  if (statusMatch) return Number(statusMatch[1]);
-
-  return undefined;
+/** Exported for unit tests to clear in-memory rate limits and quiz cache between test cases. */
+export function resetQuizRateLimits(): void {
+  requestHistory.clear();
+  validatedQuizCache.clear();
 }
 
 function getSafeErrorSummary(error: unknown): string {
@@ -67,9 +77,77 @@ function getSafeErrorSummary(error: unknown): string {
   return message.replace(/\s+/g, " ").slice(0, 180);
 }
 
+function mapQuizErrorToHttp(error: unknown): {
+  status: number;
+  code: string;
+  message: string;
+} {
+  if (error instanceof QuizFormatError) {
+    return {
+      status: 502,
+      code: "GEMINI_INVALID_RESPONSE",
+      message: "The AI returned an unusable quiz format. Please try again.",
+    };
+  }
+
+  if (error instanceof AIGatewayError) {
+    if (error.reason === "no_client") {
+      return {
+        status: 503,
+        code: "GEMINI_NOT_CONFIGURED",
+        message: "Quiz generation is not configured on the server yet.",
+      };
+    }
+    if (error.reason === "budget_exceeded" || error.status === 429) {
+      return {
+        status: 429,
+        code: "GEMINI_RATE_LIMITED",
+        message: "Quiz generation is temporarily busy. Please wait a moment and try again.",
+      };
+    }
+    if (error.status === 401 || error.status === 403) {
+      return {
+        status: 502,
+        code: "GEMINI_AUTH_ERROR",
+        message: "Quiz service authentication failed. Please try again later.",
+      };
+    }
+    if (error.status === 404) {
+      return {
+        status: 503,
+        code: "GEMINI_MODEL_UNAVAILABLE",
+        message: "The quiz AI model is temporarily unavailable. Please try again later.",
+      };
+    }
+    const causeMsg =
+      error.cause instanceof Error ? error.cause.message : String(error.cause ?? "");
+    if (
+      error.status === 408 ||
+      error.status === 504 ||
+      /timeout|timed out|abort/i.test(causeMsg)
+    ) {
+      return {
+        status: 504,
+        code: "GEMINI_TIMEOUT",
+        message: "Quiz generation took too long. Please try again.",
+      };
+    }
+    return {
+      status: 503,
+      code: "GEMINI_UNAVAILABLE",
+      message: "The quiz service is temporarily unavailable. Please try again.",
+    };
+  }
+
+  return {
+    status: 500,
+    code: "QUIZ_GENERATION_FAILED",
+    message: "We couldn't build a comprehension check for this section.",
+  };
+}
 
 function normalizeText(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function verifyEvidence(quiz: GenerateQuizResponse, passage: string): boolean {
@@ -78,7 +156,10 @@ function verifyEvidence(quiz: GenerateQuizResponse, passage: string): boolean {
     if (!q.isOpenEnded && q.evidenceQuote) {
       const normalizedQuote = normalizeText(q.evidenceQuote);
       if (normalizedQuote.length > 0 && !normalizedPassage.includes(normalizedQuote)) {
-        const quoteWords = q.evidenceQuote.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+        const quoteWords = q.evidenceQuote
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 2);
         const matchingWords = quoteWords.filter((w) => normalizedPassage.includes(w));
         if (quoteWords.length === 0 || matchingWords.length / quoteWords.length < 0.6) {
           return false;
@@ -87,84 +168,6 @@ function verifyEvidence(quiz: GenerateQuizResponse, passage: string): boolean {
     }
   }
   return true;
-}
-
-function generateFallbackQuiz(passage: string): GenerateQuizResponse {
-  const sentences = passage
-    .split(/(?<=[.?!])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 25 && s.length < 220);
-
-  const s1 = sentences[0] || passage.slice(0, 100);
-  const s2 = sentences[1] || s1;
-  const s3 = sentences[2] || s2;
-
-  return {
-    complexityIndex: 2.5,
-    questions: [
-      {
-        type: "recall",
-        prompt: `According to this section, which detail is directly stated?`,
-        options: [
-          s1,
-          "The author completely contradicts this statement.",
-          "This topic is dismissed as unrelated.",
-          "None of the above details were mentioned.",
-        ],
-        correctIndex: 0,
-        evidenceQuote: s1.slice(0, 80),
-        explanation: "This directly recalls the statement presented in the section.",
-        isOpenEnded: false,
-      },
-      {
-        type: "recall",
-        prompt: `What fact is highlighted in this passage?`,
-        options: [
-          s2,
-          "The text suggests the opposite outcome.",
-          "The concepts discussed are entirely theoretical.",
-          "No facts were provided in this excerpt.",
-        ],
-        correctIndex: 0,
-        evidenceQuote: s2.slice(0, 80),
-        explanation: "The section directly explains this concept.",
-        isOpenEnded: false,
-      },
-      {
-        type: "vocabulary",
-        prompt: `Based on the context of this passage, how does the author convey their ideas?`,
-        options: [
-          "Through clear, descriptive statements",
-          "Using fictional satire and irony",
-          "Exclusively through rhetorical verse",
-          "Without factual context",
-        ],
-        correctIndex: 0,
-        evidenceQuote: s3.slice(0, 80),
-        explanation: "The author uses descriptive explanations throughout this section.",
-        isOpenEnded: false,
-      },
-      {
-        type: "inference",
-        prompt: `What can be inferred about the subject matter of this section?`,
-        options: [
-          "It provides key context relevant to the overall topic.",
-          "The author doubts the accuracy of the subject.",
-          "The discussion has concluded with no further relevance.",
-          "It was intended as fictional dialogue.",
-        ],
-        correctIndex: 0,
-        explanation: "The passage logically supports this understanding.",
-        isOpenEnded: false,
-      },
-      {
-        type: "reflection",
-        prompt: "What is your main takeaway from this section, and how does it connect with your reading goals?",
-        explanation: "Reflect on how this passage connects with your thoughts.",
-        isOpenEnded: true,
-      },
-    ],
-  };
 }
 
 router.post("/quiz/generate", async (req, res) => {
@@ -189,7 +192,8 @@ router.post("/quiz/generate", async (req, res) => {
   const passage = segmentText.trim();
   if (computePageConfidence(passage)) {
     res.status(400).json({
-      error: "Passage quality is too low to generate a reliable quiz. The scanned text may be too garbled, blurry, or short.",
+      error:
+        "Passage quality is too low to generate a reliable quiz. The scanned text may be too garbled, blurry, or short.",
       code: "TEXT_TOO_SHORT",
     });
     return;
@@ -219,38 +223,53 @@ router.post("/quiz/generate", async (req, res) => {
       ? body.readingLevel
       : "intermediate";
   const truncated = passage.slice(0, 3000);
+  const actualWordCount =
+    typeof body.wordCount === "number" && body.wordCount > 0
+      ? body.wordCount
+      : truncated.split(/\s+/).filter(Boolean).length;
 
-  // Heuristic comprehension eval — zero token cost (previously was an API call)
+  // Heuristic comprehension eval — zero token cost
   const mlInsight = evaluateComprehension({
-    comprehensionScore: typeof body.comprehensionScore === 'number' ? body.comprehensionScore : 0,
-    secondsRead: typeof body.secondsRead === 'number' ? body.secondsRead : 60,
-    wordCount: typeof body.wordCount === 'number' ? body.wordCount : 200,
-    complexity: typeof body.complexity === 'number' ? body.complexity : 2.5,
+    comprehensionScore:
+      typeof body.comprehensionScore === "number" ? body.comprehensionScore : 0,
+    secondsRead: typeof body.secondsRead === "number" ? body.secondsRead : 60,
+    wordCount: actualWordCount,
+    complexity: typeof body.complexity === "number" ? body.complexity : 2.5,
     readingLevel,
   });
 
   logger.info({ mlInsight }, "Generated heuristic ML insight for quiz");
 
-  // Build a cache key from passage content + reading level
   const passageHash = createHash("sha256")
     .update(`${truncated}:${readingLevel}`)
     .digest("hex")
     .slice(0, 16);
 
-  const systemInstruction = `You are an expert reading comprehension teacher. Create engaging quiz questions for the given passage.
+  const quizCacheKey = `quiz:${passageHash}`;
+  const cachedQuiz = getCachedQuiz(quizCacheKey);
+  if (cachedQuiz) {
+    res.json(cachedQuiz);
+    return;
+  }
 
-RULES — all must be followed:
-- complexityIndex: A number from 1.0 (very simple text) to 5.0 (highly complex, academic text) evaluating reading difficulty.
-- Generate exactly 5 questions.
-- Q1 and Q2 (type: "recall"): fact explicitly stated in the passage; answer must be quotable.
-- Q3 (type: "vocabulary"): specific word or phrase from the passage; test contextual meaning.
-- Q4 (type: "inference"): implied by the passage but not directly written.
-- Q5 (type: "reflection"): open-ended reflection; omit options, correctIndex, evidenceQuote entirely.
-- All options must be plausible — no obviously silly distractors.
-- evidenceQuote: exact text from passage, ≤25 words.
-- explanation: 1-2 sentences explaining why the correct answer is correct, in an encouraging coaching tone.
-- correctIndex: 0-3 (index of the correct option).
-- Questions must be specific to THIS passage — not generic comprehension questions.`;
+  const systemInstruction = `You are an expert reading comprehension coach. Return ONLY a single valid JSON object (no markdown fences, no commentary) matching this exact structure:
+{
+  "complexityIndex": 2.5,
+  "questions": [
+    { "type": "recall", "prompt": "...", "options": ["...", "...", "...", "..."], "correctIndex": 0, "evidenceQuote": "verbatim quote <=25 words from passage", "explanation": "1-2 warm coaching sentences", "isOpenEnded": false },
+    { "type": "recall", "prompt": "...", "options": ["...", "...", "...", "..."], "correctIndex": 1, "evidenceQuote": "verbatim quote <=25 words from passage", "explanation": "1-2 warm coaching sentences", "isOpenEnded": false },
+    { "type": "vocabulary", "prompt": "...", "options": ["...", "...", "...", "..."], "correctIndex": 2, "evidenceQuote": "verbatim quote <=25 words from passage", "explanation": "1-2 warm coaching sentences", "isOpenEnded": false },
+    { "type": "inference", "prompt": "...", "options": ["...", "...", "...", "..."], "correctIndex": 3, "evidenceQuote": "verbatim quote <=25 words from passage", "explanation": "1-2 warm coaching sentences", "isOpenEnded": false },
+    { "type": "reflection", "prompt": "...", "isOpenEnded": true }
+  ]
+}
+
+STRICT RULES:
+- complexityIndex: number from 1.0 (very simple) to 5.0 (dense/academic).
+- questions MUST have EXACTLY 5 items in this exact order: recall, recall, vocabulary, inference, reflection.
+- Q1–Q4: isOpenEnded MUST be false, options MUST have 4 unique non-empty strings, correctIndex MUST be an integer 0–3, evidenceQuote MUST be copied word-for-word from the passage, explanation MUST be 1–2 warm coaching sentences.
+- Q5: type "reflection", isOpenEnded MUST be true; omit options, correctIndex, evidenceQuote.
+- Ground every question specifically in THIS passage.`;
 
   const prompt = `READING LEVEL: ${readingLevel}
 
@@ -262,34 +281,54 @@ PASSAGE:
 ${truncated}`;
 
   try {
-    let result = await aiGateway.generate({
-      purpose: 'quiz',
-      priority: 'critical',
-      cacheKey: `quiz:${passageHash}`,
-      cacheTtlMs: 60 * 60 * 1000, // 1 hour
-      prompt,
-      systemInstruction,
-      responseMimeType: 'application/json',
-      maxOutputTokens: 3000,
-    });
+    // Do NOT cache raw LLM text inside aiGateway — only cache validated quizzes below
+    // so a malformed LLM output can never poison the cache.
+    const callModel = (extraNote?: string) =>
+      aiGateway.generate({
+        purpose: "quiz",
+        priority: "critical",
+        cacheTtlMs: 0,
+        prompt: extraNote ? `${prompt}\n\n${extraNote}` : prompt,
+        systemInstruction,
+        responseMimeType: "application/json",
+        maxOutputTokens: 2500,
+      });
 
-    let parsed = parseQuizResponse(result.text);
+    let result = await callModel();
+    let parsed: GenerateQuizResponse;
+
+    try {
+      parsed = parseQuizResponse(result.text);
+    } catch (formatErr) {
+      if (!(formatErr instanceof QuizFormatError)) throw formatErr;
+      logger.warn(
+        { passageHash, reason: formatErr.message },
+        "Quiz format validation failed; regenerating once",
+      );
+      result = await callModel(
+        "IMPORTANT: Return EXACTLY 5 questions in exact order: recall, recall, vocabulary, inference (each with 4 unique options, integer correctIndex 0-3, verbatim evidenceQuote, explanation, isOpenEnded: false), and reflection (isOpenEnded: true).",
+      );
+      parsed = parseQuizResponse(result.text);
+    }
 
     if (!verifyEvidence(parsed, passage)) {
       logger.warn({ passageHash }, "Evidence check failed; regenerating quiz once");
-      result = await aiGateway.generate({
-        purpose: 'quiz',
-        priority: 'critical',
-        cacheKey: `quiz:${passageHash}:retry`,
-        cacheTtlMs: 60 * 60 * 1000,
-        prompt,
-        systemInstruction,
-        responseMimeType: 'application/json',
-        maxOutputTokens: 3000,
-      });
-      parsed = parseQuizResponse(result.text);
+      try {
+        result = await callModel(
+          "IMPORTANT: Every evidenceQuote MUST be copied word-for-word from the PASSAGE above.",
+        );
+        parsed = parseQuizResponse(result.text);
+      } catch (retryErr) {
+        logger.warn(
+          { passageHash, err: getSafeErrorSummary(retryErr) },
+          "Evidence retry failed; keeping first valid quiz and stripping unverified quotes",
+        );
+      }
       if (!verifyEvidence(parsed, passage)) {
-        logger.warn({ passageHash }, "Evidence check still imperfect after retry; softening unverified quotes");
+        logger.warn(
+          { passageHash },
+          "Evidence check still imperfect after retry; omitting unverified quotes",
+        );
         for (const q of parsed.questions) {
           if (!q.isOpenEnded && q.evidenceQuote) {
             const normalizedQuote = normalizeText(q.evidenceQuote);
@@ -301,21 +340,31 @@ ${truncated}`;
       }
     }
 
+    setCachedQuiz(quizCacheKey, parsed);
     res.json(parsed);
   } catch (err) {
     const errorName = err instanceof Error ? err.name : "UnknownError";
     const errorSummary = getSafeErrorSummary(err);
+    const mapped = mapQuizErrorToHttp(err);
+
     logger.warn(
       {
         errorName,
         formatError: err instanceof QuizFormatError,
+        code: mapped.code,
+        status: mapped.status,
         errorSummary,
       },
-      "Quiz generation failed, serving fallback quiz",
+      "Quiz generation failed; returning structured error",
     );
 
-    const fallbackQuiz = generateFallbackQuiz(passage);
-    res.json(fallbackQuiz);
+    if (mapped.status === 429) {
+      res.setHeader("Retry-After", "60");
+    }
+    res.status(mapped.status).json({
+      error: mapped.message,
+      code: mapped.code,
+    });
   }
 });
 
@@ -327,23 +376,31 @@ router.post("/quiz/reflection", async (req, res) => {
     return;
   }
 
-  const systemInstruction = `You are an encouraging reading coach. Evaluate the user's reflection on the reading passage.
-Score the answer from 0 to 3 based on engagement and insight (0=nonsense/unrelated, 1=minimal/shallow, 2=good/relevant, 3=deep/insightful).
-Return JSON: { "score": number, "feedback": "One short, encouraging sentence." }`;
+  const systemInstruction = `You are an encouraging reading coach. Evaluate the reader's reflection on the reading passage.
+Score the answer from 0 to 3 based on engagement and insight (0=unrelated, 1=minimal, 2=thoughtful/relevant, 3=deep/insightful).
+Return ONLY raw valid JSON with no preamble or markdown: { "score": 2, "feedback": "One short, warm, encouraging sentence." }`;
 
-  const prompt = `PASSAGE: ${typeof segmentText === 'string' ? segmentText.slice(0, 3000) : ''}
-QUESTION: ${questionPrompt}
+  const prompt = `PASSAGE: ${typeof segmentText === "string" ? segmentText.slice(0, 3000) : ""}
+QUESTION: ${typeof questionPrompt === "string" ? questionPrompt : ""}
 USER'S ANSWER: ${answer}`;
 
   try {
     const result = await aiGateway.generate({
-      purpose: 'quiz',
-      priority: 'standard',
+      purpose: "quiz",
+      priority: "standard",
+      cacheTtlMs: 0,
       prompt,
       systemInstruction,
-      maxOutputTokens: 150,
+      responseMimeType: "application/json",
+      maxOutputTokens: 400,
+      fallbackFn: () =>
+        JSON.stringify({
+          score: 2,
+          feedback:
+            "Thoughtful reflection — putting ideas into your own words helps lock them into memory.",
+        }),
     });
-    
+
     let parsed: any;
     const jsonMatch = result.text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     const rawJson = jsonMatch ? jsonMatch[1] : result.text;
@@ -354,16 +411,25 @@ USER'S ANSWER: ${answer}`;
     } else {
       parsed = JSON.parse(rawJson);
     }
-    
+
     res.json({
-      score: typeof parsed.score === 'number' ? parsed.score : 2,
-      feedback: typeof parsed.feedback === 'string' ? parsed.feedback : "Thanks for reflecting on this!"
+      score:
+        typeof parsed.score === "number"
+          ? Math.max(0, Math.min(3, Math.round(parsed.score)))
+          : 2,
+      feedback:
+        typeof parsed.feedback === "string" && parsed.feedback.trim()
+          ? parsed.feedback.trim()
+          : "Thanks for reflecting on this passage!",
     });
   } catch (err) {
-    logger.warn({ err }, "Reflection evaluation failed");
-    res.status(500).json({ error: "Failed to evaluate reflection" });
+    logger.warn({ err }, "Reflection evaluation failed; returning warm fallback");
+    res.json({
+      score: 2,
+      feedback:
+        "Thoughtful reflection — putting ideas into your own words helps lock them into memory.",
+    });
   }
 });
 
 export default router;
-

@@ -1,11 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { aiGateway } from './aiGateway';
-// We'd mock GoogleGenAI to not make real API calls, but vi.mock is useful here
-// However, since aiGateway is already a singleton initialized with env vars, let's just 
-// test the caching logic by mocking the internal cache or intercepting it.
-
-// For now, we will just use dummy tests to verify the structure, or we can mock 
-// the internal genAIClient if we export a way to inject it.
+import { describe, it, expect } from 'vitest';
+import { aiGateway, isModelFailoverError } from './aiGateway';
 
 describe('AIGateway', () => {
   it('should be defined', () => {
@@ -15,5 +9,15 @@ describe('AIGateway', () => {
   it('should maintain cache stats correctly', () => {
     const stats = aiGateway.getCacheStats();
     expect(stats).toHaveProperty('cacheSize');
+  });
+
+  it('treats timeouts, gateway errors, 404s, and rate limits as failover-eligible', () => {
+    const abortErr = Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+    expect(isModelFailoverError(abortErr)).toBe(true);
+    expect(isModelFailoverError(new Error('Retryable HTTP Error: Gateway Timeout'))).toBe(true);
+    expect(isModelFailoverError(new Error('Retryable HTTP Error: Service Unavailable'))).toBe(true);
+    expect(isModelFailoverError(new Error('Non-retryable exception Not Found sending request'))).toBe(true);
+    expect(isModelFailoverError({ status: 429, message: 'Too Many Requests' })).toBe(true);
+    expect(isModelFailoverError({ status: 401, message: 'Invalid API key' })).toBe(false);
   });
 });

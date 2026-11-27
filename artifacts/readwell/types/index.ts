@@ -68,8 +68,8 @@ export interface BadgeInfo {
 
 export const BADGE_INFO: Record<BadgeKey, BadgeInfo> = {
   'first-book': { name: 'First Chapter', description: 'Finished your first book', icon: 'book', color: '#E07B39' },
-  'streak-7': { name: '7-Day Flame', description: '7 days reading in a row', icon: 'flame', color: '#EF4444' },
-  'streak-30': { name: 'Month Strong', description: '30 days reading in a row', icon: 'trophy', color: '#F59E0B' },
+  'streak-7': { name: '7-Day Flame', description: '7 days reading in a row', icon: 'zap', color: '#EF4444' },
+  'streak-30': { name: 'Month Strong', description: '30 days reading in a row', icon: 'award', color: '#F59E0B' },
   'perfect-quiz': { name: 'Perfect Score', description: 'Scored 5/5 on a quiz', icon: 'star', color: '#8B5CF6' },
   'night-owl': { name: 'Night Owl', description: 'Read after 10pm', icon: 'moon', color: '#6366F1' },
   'early-bird': { name: 'Early Bird', description: 'Read before 7am', icon: 'sun', color: '#F59E0B' },
@@ -237,6 +237,7 @@ export interface CoachMessage {
     title?: string;
     author?: string;
     chapter?: number;
+    totalChapters?: number;
     segmentText?: string;
   };
 }

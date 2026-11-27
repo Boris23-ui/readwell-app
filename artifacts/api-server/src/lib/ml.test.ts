@@ -41,4 +41,29 @@ describe('evaluateComprehension (Local Heuristic)', () => {
     expect(insight.promptGuidance).toContain('ML Insight: Heuristic predicts');
     expect(insight.recommendedComplexityAdjust).toBeDefined();
   });
+
+  it('uses a neutral baseline on cold start (comprehensionScore === 0) instead of assuming struggle', () => {
+    const insight = evaluateComprehension({
+      comprehensionScore: 0,
+      secondsRead: 60,
+      wordCount: 180,
+      complexity: 2.5,
+      readingLevel: 'intermediate',
+    });
+
+    expect(insight.predictedComprehension).toBeGreaterThanOrEqual(0.7);
+    expect(insight.recommendedComplexityAdjust).toBeGreaterThanOrEqual(0);
+  });
+
+  it('defaults WPM neutrally when wordCount is missing (0)', () => {
+    const insight = evaluateComprehension({
+      comprehensionScore: 75,
+      secondsRead: 60,
+      wordCount: 0,
+      complexity: 2.0,
+      readingLevel: 'intermediate',
+    });
+
+    expect(insight.predictedComprehension).toBeGreaterThan(0.7);
+  });
 });

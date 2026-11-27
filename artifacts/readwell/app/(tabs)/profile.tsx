@@ -37,7 +37,7 @@ export default function ProfileScreen() {
     .toUpperCase()
     .slice(0, 2) || 'R';
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
+  const topPad = Platform.OS === 'web' ? 24 : insets.top + 12;
   const botPad = Platform.OS === 'web' ? 34 : 0;
 
   const levelProgress = xpProgress.percent;
@@ -296,6 +296,12 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.settingRow}
           onPress={() => {
+            if (Platform.OS === 'web') {
+              if (typeof window !== 'undefined' && window.confirm('Are you sure you want to sign out of ReadWell?')) {
+                signOut();
+              }
+              return;
+            }
             Alert.alert(
               'Sign Out',
               'Are you sure you want to sign out of ReadWell?',
@@ -326,13 +332,16 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Footer mantra */}
+      {/* Member since */}
       <Animated.View entering={FadeInUp.delay(400).springify()} layout={Layout.springify()} style={styles.footerSection}>
         <Text style={[styles.memberText, { color: colors.mutedForeground }]}>
-          Member since {new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-        </Text>
-        <Text style={[styles.footerMantra, { color: colors.mutedForeground }]}>
-          CLICK-DRIVEN · REPLAY-EXACT · SOCRATIC RETENTION
+          Member since{' '}
+          {(() => {
+            const d = new Date(profile.createdAt);
+            return Number.isNaN(d.getTime())
+              ? 'today'
+              : d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+          })()}
         </Text>
       </Animated.View>
     </ScrollView>

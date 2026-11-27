@@ -26,7 +26,7 @@ export default function StatsScreen() {
   const insets = useSafeAreaInsets();
   const { profile, books, sessions, dailyActivities } = useApp();
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top + 12;
+  const topPad = Platform.OS === 'web' ? 24 : insets.top + 12;
   const botPad = Platform.OS === 'web' ? 34 : 0;
 
   const totalMinutesRead = Number.isFinite(profile?.totalMinutesRead)
@@ -39,7 +39,7 @@ export default function StatsScreen() {
   const finishedBooks = (books || []).filter(b => b?.status === 'finished').length;
 
   const validSessions = (sessions || []).filter(
-    s => typeof s?.comprehensionScore === 'number' && Number.isFinite(s.comprehensionScore)
+    s => typeof s?.comprehensionScore === 'number' && Number.isFinite(s.comprehensionScore) && s.comprehensionScore > 0
   );
   const avgScore =
     validSessions.length > 0
@@ -57,16 +57,16 @@ export default function StatsScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.header, { paddingTop: topPad }]}>
-        <View style={[styles.circuitPill, { borderColor: `${colors.honeyDeep}88` }]}>
+        <View style={[styles.circuitPill, { borderColor: `${colors.honeyDeep}66`, backgroundColor: `${colors.honey}18` }]}>
           <Text style={[styles.circuitPillText, { color: colors.honeyDeep }]}>
-            🗺️ THE CIRCUIT MAP · TELEMETRY
+            YOUR PROGRESS
           </Text>
         </View>
         <Text style={[styles.title, { color: colors.foreground }]}>
-          Habit & Skill <Text style={{ color: colors.honeyDeep }}>Circuit</Text>
+          Reading Stats
         </Text>
         <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Introspected from your reading runtime — streak momentum, comprehension yields, and badge artifacts.
+          Track your daily habit, comprehension growth, and milestones over time.
         </Text>
       </View>
 
@@ -120,8 +120,10 @@ export default function StatsScreen() {
       >
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>Comprehension</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={{ fontSize: 36, fontFamily: 'Newsreader_700Bold', color: colors.slateDeep }}>{profile.comprehensionScore}</Text>
+          <View style={{ alignItems: 'center', minWidth: 68 }}>
+            <Text style={{ fontSize: 34, fontFamily: 'Newsreader_700Bold', color: colors.slateDeep }}>
+              {profile.comprehensionScore > 0 ? `${profile.comprehensionScore}%` : '—'}
+            </Text>
             <Text style={{ fontSize: 10, fontFamily: 'Inter_700Bold', color: colors.mutedForeground, letterSpacing: 0.8 }}>SCORE</Text>
           </View>
           <View style={{ flex: 1, paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: colors.border }}>
@@ -130,11 +132,19 @@ export default function StatsScreen() {
               {profile.comprehensionTrend === 'down' && <Feather name="trending-down" size={16} color={colors.terracotta} />}
               {profile.comprehensionTrend === 'flat' && <Feather name="minus" size={16} color={colors.mutedForeground} />}
               <Text style={{ fontSize: 14, fontFamily: 'Inter_600SemiBold', color: colors.foreground }}>
-                {profile.comprehensionTrend === 'up' ? 'Growing strong' : profile.comprehensionTrend === 'down' ? 'Needs focus' : 'Steady progress'}
+                {profile.comprehensionScore === 0
+                  ? 'Not measured yet'
+                  : profile.comprehensionTrend === 'up'
+                  ? 'Growing strong'
+                  : profile.comprehensionTrend === 'down'
+                  ? 'Needs focus'
+                  : 'Steady progress'}
               </Text>
             </View>
             <Text style={{ fontSize: 13, fontFamily: 'Inter_400Regular', color: colors.mutedForeground, lineHeight: 18 }}>
-              This score adapts to your reading difficulty. Keep reading to build it up.
+              {profile.comprehensionScore === 0
+                ? 'Complete your first reading quiz to establish a comprehension baseline.'
+                : 'Weighted across your last 20 quizzes so recent growth matters most.'}
             </Text>
           </View>
         </View>
@@ -186,17 +196,12 @@ export default function StatsScreen() {
           ]}
         >
           {ALL_BADGES.map(key => (
-            <BadgeItem key={key} badgeKey={key} earned={earnedBadges.includes(key)} />
+            <View key={key} style={styles.badgeCell}>
+              <BadgeItem badgeKey={key} earned={earnedBadges.includes(key)} />
+            </View>
           ))}
         </View>
       </Animated.View>
-
-      {/* Footer mantra */}
-      <View style={styles.footerNote}>
-        <Text style={[styles.footerNoteText, { color: colors.mutedForeground }]}>
-          CLICK-DRIVEN · REPLAY-EXACT · SOCRATIC RETENTION — NOTHING MOVES UNTIL YOU DO
-        </Text>
-      </View>
     </ScrollView>
   );
 }
@@ -241,8 +246,14 @@ const styles = StyleSheet.create({
   badgesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingTop: 18,
+    paddingBottom: 4,
+  },
+  badgeCell: {
+    width: '25%',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   footerNote: {
     paddingHorizontal: 30,

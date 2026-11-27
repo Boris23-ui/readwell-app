@@ -148,7 +148,7 @@ export default function PdfReader({ book }: { book: Book }) {
 
   const [showFinishCard, setShowFinishCard] = useState(false);
   const [showCoachModal, setShowCoachModal] = useState(false);
-  const [sessionStart] = useState(Date.now());
+  const [sessionStart, setSessionStart] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState(0);
   const [zoomPage, setZoomPage] = useState<{ uri: string; aspect: number } | null>(null);
   const [failedPages, setFailedPages] = useState<Set<number>>(new Set());
@@ -177,9 +177,13 @@ export default function PdfReader({ book }: { book: Book }) {
 
   const [visiblePage, setVisiblePage] = useState(segment?.pageStart ?? 1);
 
-  // Reset the visible-page indicator whenever the reader advances to a new section.
+  // Reset the visible-page indicator & timer whenever the reader advances to a new section.
   useEffect(() => {
     setVisiblePage(segment?.pageStart ?? 1);
+    setShowFinishCard(false);
+    finishAnim.setValue(0);
+    setSessionStart(Date.now());
+    setElapsed(0);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [segmentIndex]);
 
@@ -249,9 +253,17 @@ export default function PdfReader({ book }: { book: Book }) {
   const handleTakeQuiz = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const secondsRead = Math.floor((Date.now() - sessionStart) / 1000);
+    const sectionWordCount = Array.isArray(segment?.paragraphs)
+      ? segment.paragraphs.join(' ').split(/\s+/).filter(Boolean).length
+      : 0;
     router.push({
       pathname: '/quiz/[bookId]',
-      params: { bookId: book.id, segmentIndex: String(segmentIndex), secondsRead: String(secondsRead) },
+      params: {
+        bookId: book.id,
+        segmentIndex: String(segmentIndex),
+        secondsRead: String(secondsRead),
+        wordCount: String(sectionWordCount || 200),
+      },
     });
   };
 
@@ -536,7 +548,14 @@ export default function PdfReader({ book }: { book: Book }) {
             title: book.title,
             author: book.author,
             chapter: visiblePage,
-            segmentText: `Page ${visiblePage} of ${book.title}`,
+            totalChapters: totalSegments,
+            segmentText: (() => {
+              const currentPageText =
+                sectionPages.find((p) => p.pageNumber === visiblePage)?.text?.trim() || '';
+              const sectionText = segment?.paragraphs?.join('\n\n')?.trim() || '';
+              const combined = currentPageText.length >= 60 ? currentPageText : sectionText;
+              return combined ? combined.slice(0, 1500) : `Page ${visiblePage} of ${book.title}`;
+            })(),
           }}
         />
       </Modal>

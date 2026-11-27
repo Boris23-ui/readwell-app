@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, LayoutAnimation } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
@@ -11,19 +12,21 @@ export function ReviewQueueCard() {
   const [activeItem, setActiveItem] = useState<ReviewItem | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
 
-  useEffect(() => {
-    loadItems();
-  }, []);
-
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     const due = await getDueReviews(3); // 3-5 items
     setItems(due);
-    if (due.length > 0 && !activeItem) {
-      setActiveItem(due[0]);
-    } else if (due.length === 0) {
-      setActiveItem(null);
-    }
-  };
+    setActiveItem((prev) => {
+      if (due.length === 0) return null;
+      if (prev && due.some((d) => d.id === prev.id)) return prev;
+      return due[0];
+    });
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadItems();
+    }, [loadItems]),
+  );
 
   const handleReveal = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

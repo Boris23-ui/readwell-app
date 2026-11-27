@@ -20,6 +20,7 @@ import {
 } from '@/utils/api';
 
 const CACHE_COACH_MESSAGES = '@readwell/coach-messages';
+const CACHE_COACH_FLASHCARDS = '@readwell/coach-flashcards';
 const CACHE_COACH_DIGEST_DISMISSED = '@readwell/coach-digest-dismissed';
 
 interface CoachContextType {
@@ -60,7 +61,7 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { books } = useApp();
 
-  const userId = user?.uid || 'learner_reader';
+  const userId = user?.uid || 'guest_user';
 
   const [messages, setMessages] = useState<CoachMessage[]>([]);
   const [strategy, setStrategy] = useState<StrategyDoc | null>(DEFAULT_STRATEGY);
@@ -102,6 +103,19 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // 1b. Load locally cached flashcards (resilience for offline / guest sessions)
+        const cachedCards = await AsyncStorage.getItem(`${CACHE_COACH_FLASHCARDS}_${userId}`);
+        if (cachedCards && mounted) {
+          try {
+            const parsedCards = JSON.parse(cachedCards);
+            if (Array.isArray(parsedCards)) {
+              setFlashcards(parsedCards);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         // 2. Fetch Strategy & Flashcards
         const [stratRes, cardsRes, digestRes] = await Promise.allSettled([
           fetchCoachStrategy(userId),
@@ -114,7 +128,14 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (mounted && cardsRes.status === 'fulfilled' && cardsRes.value) {
-          setFlashcards(cardsRes.value.allCards || []);
+          const remoteCards: Flashcard[] = cardsRes.value.allCards || [];
+          if (remoteCards.length > 0 || !cachedCards) {
+            setFlashcards(remoteCards);
+            AsyncStorage.setItem(
+              `${CACHE_COACH_FLASHCARDS}_${userId}`,
+              JSON.stringify(remoteCards),
+            ).catch(() => {});
+          }
         }
 
         if (mounted && digestRes.status === 'fulfilled' && digestRes.value) {
@@ -157,7 +178,12 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
   const refreshFlashcards = useCallback(async () => {
     try {
       const res = await fetchCoachFlashcards(userId);
-      setFlashcards(res.allCards || []);
+      const remoteCards: Flashcard[] = res.allCards || [];
+      setFlashcards(remoteCards);
+      AsyncStorage.setItem(
+        `${CACHE_COACH_FLASHCARDS}_${userId}`,
+        JSON.stringify(remoteCards),
+      ).catch(() => {});
     } catch (err) {
       console.warn('Could not refresh coach flashcards', err);
     }
@@ -169,16 +195,33 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
   ) => {
     if (!text.trim() || isSending) return;
 
+    const derivedBookContext: CoachMessage['bookContext'] | undefined =
+      customBookContext ||
+      (selectedBook
+        ? (() => {
+            const safeIdx = Math.min(
+              Math.max(0, selectedBook.currentSegmentIndex || 0),
+              Math.max(0, selectedBook.segments.length - 1),
+            );
+            const activeSeg = selectedBook.segments[safeIdx];
+            const segText = activeSeg?.paragraphs?.join('\n\n')?.trim()?.slice(0, 1200);
+            return {
+              bookId: selectedBook.id,
+              title: selectedBook.title,
+              author: selectedBook.author,
+              chapter: safeIdx + 1,
+              totalChapters: selectedBook.segments.length,
+              segmentText: segText || undefined,
+            };
+          })()
+        : undefined);
+
     const userMsg: CoachMessage = {
       id: `usr_${Date.now()}`,
       role: 'user',
       content: text.trim(),
       timestamp: new Date().toISOString(),
-      bookContext: customBookContext || (selectedBook ? {
-        bookId: selectedBook.id,
-        title: selectedBook.title,
-        chapter: selectedBook.currentSegmentIndex + 1,
-      } : undefined),
+      bookContext: derivedBookContext,
     };
 
     const nextMessages = [...messages, userMsg];
@@ -186,11 +229,16 @@ export function CoachProvider({ children }: { children: React.ReactNode }) {
     setIsSending(true);
 
     try {
-      const bookContext = userMsg.bookContext ? {
-        bookId: userMsg.bookContext.bookId,
-        title: userMsg.bookContext.title,
-        chapter: userMsg.bookContext.chapter,
-      } : undefined;
+      const bookContext = userMsg.bookContext
+        ? {
+            bookId: userMsg.bookContext.bookId,
+            title: userMsg.bookContext.title,
+            author: userMsg.bookContext.author,
+            chapter: userMsg.bookContext.chapter,
+            totalChapters: userMsg.bookContext.totalChapters,
+            segmentText: userMsg.bookContext.segmentText,
+          }
+        : undefined;
 
       const result = await chatWithCoach({
         userId,

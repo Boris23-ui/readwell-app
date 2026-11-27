@@ -44,12 +44,9 @@ export function WhileYouWereAwayCard({ onOpenCoach, style }: Props) {
           <View style={styles.badgeGroup}>
             <View style={[styles.stagePill, { backgroundColor: `${colors.terracotta}18` }]}>
               <Text style={[styles.stagePillText, { color: colors.terracotta }]}>
-                STAGE 0 · SOCRATIC DIGEST
+                WELCOME BACK
               </Text>
             </View>
-            <Text style={[styles.versionMono, { color: colors.mutedForeground }]}>
-              v{digest.strategyVersion || strategy?.version || 1}
-            </Text>
           </View>
 
           <TouchableOpacity onPress={handleDismiss} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -60,10 +57,12 @@ export function WhileYouWereAwayCard({ onOpenCoach, style }: Props) {
         {/* Title */}
         <View style={styles.titleRow}>
           <Text style={[styles.displayTitle, { color: colors.foreground }]}>
-            While You Were Away
+            Your Reading Catch-Up
           </Text>
           <Text style={[styles.timeSubtitle, { color: colors.mutedForeground }]}>
-            {digest.daysAway ? `${digest.daysAway} days off the floor` : 'Fresh briefing'}
+            {digest.daysAway
+              ? `${digest.daysAway} ${digest.daysAway === 1 ? 'day' : 'days'} since your last session`
+              : 'Ready to pick up where you left off'}
           </Text>
         </View>
 
@@ -79,7 +78,7 @@ export function WhileYouWereAwayCard({ onOpenCoach, style }: Props) {
             style={[styles.btnFelt, { backgroundColor: colors.honey }]}
             activeOpacity={0.85}
           >
-            <Text style={styles.btnFeltText}>ENTER COACH ▸</Text>
+            <Text style={styles.btnFeltText}>Chat with Coach</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={handleDismiss} style={styles.dismissBtn}>

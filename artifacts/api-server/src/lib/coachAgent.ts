@@ -20,6 +20,7 @@ export interface ChatOptions {
     title?: string;
     author?: string;
     chapter?: number;
+    totalChapters?: number;
     segmentText?: string;
   };
 }
@@ -358,10 +359,12 @@ export async function chatWithCoach(options: ChatOptions): Promise<ChatResult> {
 
   const lower = message.toLowerCase().trim();
 
-  // 1. Transparency check: "how did you change / why did you evolve"
+  // 1. Transparency check: "how did you change / why did you evolve / adapt"
   if (
     lower.includes('why did you change') ||
+    lower.includes('why did you adapt') ||
     lower.includes('how have you evolved') ||
+    lower.includes('coaching style') ||
     lower.includes('why do you ask differently') ||
     lower.includes('explain your strategy')
   ) {
@@ -434,13 +437,26 @@ export async function chatWithCoach(options: ChatOptions): Promise<ChatResult> {
   // 4. Reading plan query: "plan / pace / schedule / fall behind"
   if (lower.includes('reading plan') || lower.includes('calculate pace') || lower.includes('schedule my reading')) {
     const bookTitle = bookContext?.title || profile.activeBooks[0]?.title || 'your current book';
-    const plan = await createReadingPlan(userId, bookTitle, 12, 14, profile.availableMinutesPerDay);
+    const totalSections =
+      bookContext?.totalChapters && bookContext.totalChapters > 0
+        ? bookContext.totalChapters
+        : profile.activeBooks[0]?.totalChapters || 10;
+    const currentSection = bookContext?.chapter && bookContext.chapter > 0 ? bookContext.chapter : 1;
+    const remainingSections = Math.max(1, totalSections - currentSection + 1);
+    const targetDays = Math.min(21, Math.max(3, remainingSections));
+    const plan = await createReadingPlan(
+      userId,
+      bookTitle,
+      remainingSections,
+      targetDays,
+      profile.availableMinutesPerDay,
+    );
 
     const reply = `Here is your customized reading plan for **'${bookTitle}'**:\n\n` +
-      `• Goal: 12 chapters in 14 days (~${plan.chaptersPerDay} chapter/day)\n` +
+      `• Goal: ${remainingSections} remaining section${remainingSections === 1 ? '' : 's'} in ${plan.targetDays} days (~${plan.chaptersPerDay} section${plan.chaptersPerDay === 1 ? '' : 's'}/day)\n` +
       `• Estimated daily time: ~${plan.estimatedMinutesPerSession} minutes\n` +
-      `• Pacing status: ${plan.feasible ? '✅ Fully feasible with your daily goal!' : '⚠️ Consider spreading across a few extra days'}\n\n` +
-      `Remember: Life happens! If you miss a day, tell me and I'll adjust the schedule with zero guilt. Progress over perfection!`;
+      `• Pacing status: ${plan.feasible ? '✅ Fits comfortably within your daily goal!' : '⚠️ Consider spreading across a few extra days'}\n\n` +
+      `Remember: life happens! If you miss a day, tell me and we'll adjust the pace with zero guilt.`;
 
     await coachMemory.saveTranscript(userId, {
       timestamp: new Date().toISOString(),
@@ -490,26 +506,25 @@ export async function chatWithCoach(options: ChatOptions): Promise<ChatResult> {
     `User: ${t.userMessage.slice(0, 100)}\nCoach: ${t.agentResponse.slice(0, 150)}`
   ).join('\n');
 
-  // Compressed system instruction (~250 chars vs previous ~528 chars)
-  const systemInstruction = `You are ReadWell Coach, a Socratic reading companion (v${strategy.version}). Tone: ${strategy.tone}. Difficulty: ${strategy.difficultyLevel}. Style: ${strategy.preferredQuestionStyle}. Ask 1-2 sharp questions per reply. Never summarize — scaffold discovery. Under 100 words.`;
+  // Grounded system instruction & passage-aware prompt
+  const systemInstruction = `You are ReadWell Coach, a warm Socratic reading companion (v${strategy.version}). Tone: ${strategy.tone}. Difficulty: ${strategy.difficultyLevel}. Style: ${strategy.preferredQuestionStyle}. Ground your response in the provided passage when available. Ask 1-2 thoughtful questions per reply. Never lecture or give long summaries — scaffold the reader's own discovery. Keep replies under 120 words.`;
 
-  // Compressed prompt — passage truncated to 800 chars (was 1500)
-  const prompt = `${profile.name} reading ${bookContext?.title ? `"${bookContext.title}"` : 'a book'}${bookContext?.chapter ? ` ch.${bookContext.chapter}` : ''}
-${bookContext?.segmentText ? `Passage: """${bookContext.segmentText.slice(0, 800)}"""\n` : ''}
-${conversationHistory ? `History:\n${conversationHistory}\n` : ''}
-User: ${message}
+  const prompt = `${profile.name} is reading ${bookContext?.title ? `"${bookContext.title}"` : 'a book'}${bookContext?.author ? ` by ${bookContext.author}` : ''}${bookContext?.chapter ? ` (Section ${bookContext.chapter}${bookContext?.totalChapters ? ` of ${bookContext.totalChapters}` : ''})` : ''}.
+${bookContext?.segmentText ? `Current passage excerpt:\n"""${bookContext.segmentText.slice(0, 1200)}"""\n` : ''}
+${conversationHistory ? `Recent dialogue:\n${conversationHistory}\n` : ''}
+Reader: ${message}
 Coach:`;
 
   try {
-    const agentModel = process.env.GEMINI_AGENT_MODEL || 'gemini-3-flash-preview';
+    const agentModel = process.env.GEMINI_AGENT_MODEL || process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
     const result = await aiGateway.generate({
       purpose: 'coach',
       priority: 'standard',
       cacheTtlMs: 0, // Never cache chat responses
       prompt,
       systemInstruction,
-      maxOutputTokens: 180, // Was 300; instruction says "under 100 words" ≈ 130 tokens
-      temperature: 1.0, // Recommended temperature for Gemini 3 series preview reasoning
+      maxOutputTokens: 400, // Leaves room for reasoning/thinking tokens while still producing concise <120 word replies
+      temperature: 0.85,
       model: agentModel,
       fallbackFn: () => {
         if (bookContext?.segmentText) {

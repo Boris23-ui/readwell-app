@@ -1,13 +1,19 @@
 import { supabase } from './supabase';
+import type { Question } from '@/types';
 
 export type UploadFile = File | { uri: string; name: string; type: string };
 
-const getAuthHeaders = async (headers: Record<string, string> = {}) => {
+const getAuthHeaders = async (
+  headers: Record<string, string> = {},
+  guestId?: string,
+) => {
   const session = await supabase.auth.getSession();
   const token = session.data.session?.access_token;
   return {
     ...headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    ...(token
+      ? { Authorization: `Bearer ${token}` }
+      : { 'X-ReadWell-Guest-Id': guestId || 'guest_user' }),
   };
 };
 
@@ -214,7 +220,7 @@ export async function generateQuiz(
   secondsRead?: number,
   wordCount?: number,
   complexity?: number
-): Promise<{ questions: any[] }> {
+): Promise<{ questions: Question[]; complexityIndex?: number }> {
   let response: Response;
   try {
     response = await fetch(`${getBaseUrl()}/api/quiz/generate`, {
@@ -282,6 +288,7 @@ export interface CoachChatPayload {
     title?: string;
     author?: string;
     chapter?: number;
+    totalChapters?: number;
     segmentText?: string;
   };
 }
@@ -298,7 +305,7 @@ export interface CoachChatResult {
 export async function chatWithCoach(payload: CoachChatPayload): Promise<CoachChatResult> {
   const response = await fetch(`${getBaseUrl()}/api/coach/chat`, {
     method: 'POST',
-    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }, payload.userId),
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
@@ -312,7 +319,7 @@ export async function chatWithCoach(payload: CoachChatPayload): Promise<CoachCha
 
 export async function fetchCoachProfile(userId: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/profile/${encodeURIComponent(userId)}`, {
-    headers: await getAuthHeaders()
+    headers: await getAuthHeaders({}, userId)
   });
   if (!response.ok) throw new Error('Failed to fetch coach profile');
   return response.json();
@@ -321,7 +328,7 @@ export async function fetchCoachProfile(userId: string) {
 export async function updateCoachProfile(userId: string, updates: any) {
   const response = await fetch(`${getBaseUrl()}/api/coach/profile/${encodeURIComponent(userId)}`, {
     method: 'POST',
-    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }, userId),
     body: JSON.stringify(updates),
   });
   if (!response.ok) throw new Error('Failed to update coach profile');
@@ -330,7 +337,7 @@ export async function updateCoachProfile(userId: string, updates: any) {
 
 export async function fetchCoachStrategy(userId: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/strategy/${encodeURIComponent(userId)}`, {
-    headers: await getAuthHeaders()
+    headers: await getAuthHeaders({}, userId)
   });
   if (!response.ok) throw new Error('Failed to fetch coach strategy');
   return response.json();
@@ -338,7 +345,7 @@ export async function fetchCoachStrategy(userId: string) {
 
 export async function fetchCoachEvolution(userId: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/evolution/${encodeURIComponent(userId)}`, {
-    headers: await getAuthHeaders()
+    headers: await getAuthHeaders({}, userId)
   });
   if (!response.ok) throw new Error('Failed to fetch evolution history');
   return response.json();
@@ -347,7 +354,7 @@ export async function fetchCoachEvolution(userId: string) {
 export async function triggerCoachEvolution(userId: string, reason?: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/trigger-evolution/${encodeURIComponent(userId)}`, {
     method: 'POST',
-    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }, userId),
     body: JSON.stringify({ reason }),
   });
   if (!response.ok) throw new Error('Failed to trigger coach evolution');
@@ -356,7 +363,7 @@ export async function triggerCoachEvolution(userId: string, reason?: string) {
 
 export async function fetchCoachDigest(userId: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/digest/${encodeURIComponent(userId)}`, {
-    headers: await getAuthHeaders()
+    headers: await getAuthHeaders({}, userId)
   });
   if (!response.ok) throw new Error('Failed to fetch coach digest');
   return response.json();
@@ -364,7 +371,7 @@ export async function fetchCoachDigest(userId: string) {
 
 export async function fetchCoachFlashcards(userId: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}`, {
-    headers: await getAuthHeaders()
+    headers: await getAuthHeaders({}, userId)
   });
   if (!response.ok) throw new Error('Failed to fetch flashcards');
   return response.json();
@@ -373,7 +380,7 @@ export async function fetchCoachFlashcards(userId: string) {
 export async function createCoachFlashcard(userId: string, card: any) {
   const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}/create`, {
     method: 'POST',
-    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }, userId),
     body: JSON.stringify(card),
   });
   if (!response.ok) throw new Error('Failed to create flashcard');
@@ -383,7 +390,7 @@ export async function createCoachFlashcard(userId: string, card: any) {
 export async function reviewCoachFlashcard(userId: string, cardId: string, quality: number, cardFront?: string) {
   const response = await fetch(`${getBaseUrl()}/api/coach/flashcards/${encodeURIComponent(userId)}/review`, {
     method: 'POST',
-    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }, userId),
     body: JSON.stringify({ cardId, quality, cardFront }),
   });
   if (!response.ok) throw new Error('Failed to review flashcard');
@@ -409,7 +416,7 @@ export async function createCoachReadingPlan(payload: {
 }) {
   const response = await fetch(`${getBaseUrl()}/api/coach/plan/create`, {
     method: 'POST',
-    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }, payload.userId),
     body: JSON.stringify(payload),
   });
   if (!response.ok) throw new Error('Failed to create reading plan');

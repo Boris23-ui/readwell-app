@@ -14,12 +14,11 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useApp } from '@/context/CloudAppContext';
-import { useCoach } from '@/context/CoachContext';
 import { BadgeItem } from '@/components/BadgeItem';
-import { BadgeKey, BADGE_INFO } from '@/types';
+import { BadgeKey } from '@/types';
+import { calculateReadingMinutes, calculateSessionXp } from '@/utils/xp';
 
 export default function SessionSummaryScreen() {
-  const coach = useCoach();
   const params = useLocalSearchParams<{
     bookId: string;
     segmentIndex: string;
@@ -52,8 +51,21 @@ export default function SessionSummaryScreen() {
 
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getBookById, updateBook, completeSession, profile } = useApp();
+  const { getBookById, updateBook, completeSession, profile, getTodayActivity } = useApp();
   const book = getBookById(bookId ?? '');
+
+  const computedMinutes = calculateReadingMinutes(secondsRead);
+  const initialTodayMinutes = getTodayActivity()?.minutesRead ?? 0;
+  const fallbackSkippedXp = calculateSessionXp(
+    computedMinutes,
+    0,
+    0,
+    initialTodayMinutes < profile.dailyGoalMinutes &&
+      initialTodayMinutes + computedMinutes >= profile.dailyGoalMinutes,
+    book ? segmentIndex + 1 >= book.segments.length : false,
+  );
+  const effectiveXpEarned =
+    xpEarned > 0 ? xpEarned : wasSkipped ? fallbackSkippedXp : 0;
 
   const [newBadges, setNewBadges] = useState<BadgeKey[]>([]);
   const [sessionSaved, setSessionSaved] = useState(false);
@@ -77,12 +89,20 @@ export default function SessionSummaryScreen() {
         await updateBook(book.id, {
           status: 'finished',
           currentSegmentIndex: nextIndex,
+          ...(Number.isFinite(complexityIndex) && complexityIndex > 0
+            ? { complexityIndex }
+            : {}),
         });
-      } else if (!wasSkipped) {
-        await updateBook(book.id, { currentSegmentIndex: nextIndex });
+      } else {
+        await updateBook(book.id, {
+          currentSegmentIndex: nextIndex,
+          ...(Number.isFinite(complexityIndex) && complexityIndex > 0
+            ? { complexityIndex }
+            : {}),
+        });
       }
 
-      const comprehensionScore = total > 0 ? Math.round((score / Math.max(total - 1, 1)) * 100) : 0;
+      const comprehensionScore = total > 1 ? Math.round((score / Math.max(total - 1, 1)) * 100) : 0;
       const isPerfectQuiz = !wasSkipped && total > 1 && score === total - 1;
 
       const result = await completeSession({
@@ -91,18 +111,13 @@ export default function SessionSummaryScreen() {
         secondsRead,
         segmentsCompleted: 1,
         comprehensionScore,
-        xpEarned,
+        xpEarned: effectiveXpEarned,
       }, { bookFinished: isLastSegment, isPerfectQuiz });
 
-
-
       setNewBadges(result.newBadges);
-      if (result.newBadges.length > 0 || profile.streakCurrent > 0) {
+      if (result.newBadges.length > 0 || profile.streakCurrent >= 0) {
         setShowStreak(true);
       }
-
-      // Notify Coach Agent to evolve reading strategy
-      coach?.evolveStrategy(`Session completed on "${book.title}". Score: ${comprehensionScore}%, XP: ${xpEarned}, Time: ${secondsRead}s.`).catch(() => {});
     };
 
     save();
@@ -124,7 +139,7 @@ export default function SessionSummaryScreen() {
 
     // XP count-up
     Animated.timing(xpAnim, {
-      toValue: xpEarned,
+      toValue: effectiveXpEarned,
       duration: 1200,
       useNativeDriver: false,
     }).start();
@@ -147,7 +162,7 @@ export default function SessionSummaryScreen() {
   const isBookFinished = segmentIndex + 1 >= book.segments.length;
   const nextSegmentIndex = segmentIndex + 1;
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top + 20;
+  const topPad = Platform.OS === 'web' ? 28 : insets.top + 20;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom + 16;
 
   // Determine score-tier accent
@@ -199,6 +214,15 @@ export default function SessionSummaryScreen() {
               <Text style={[styles.finishedBadgeText, { color: colors.sageDeep }]}>BOOK FINISHED!</Text>
             </View>
           )}
+
+          {showStreak && (profile?.streakCurrent ?? 0) > 0 && (
+            <View style={[styles.finishedBadge, { backgroundColor: `${colors.terracotta}18`, borderColor: `${colors.terracotta}55` }]}>
+              <Feather name="zap" size={14} color={colors.terracotta} />
+              <Text style={[styles.finishedBadgeText, { color: colors.terracotta }]}>
+                {profile.streakCurrent}-DAY READING STREAK
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Stats cards — felt cards */}
@@ -224,7 +248,7 @@ export default function SessionSummaryScreen() {
           <View style={[styles.feltStatCard, { backgroundColor: colors.card, borderColor: `${colors.sage}55`, shadowColor: colors.shadow }]}>
             <Feather name="zap" size={18} color={colors.sageDeep} />
             <Animated.Text style={[styles.statVal, { color: colors.sageDeep }]}>
-              {xpEarned > 0 ? `+${xpEarned}` : '0'}
+              {effectiveXpEarned > 0 ? `+${effectiveXpEarned}` : '0'}
             </Animated.Text>
             <Text style={[styles.statLblMono, { color: colors.mutedForeground }]}>XP</Text>
           </View>
@@ -263,7 +287,7 @@ export default function SessionSummaryScreen() {
               style={[styles.primaryBtn, { backgroundColor: colors.honey }]}
               activeOpacity={0.85}
             >
-              <Text style={styles.primaryBtnText}>CONTINUE READING ▸</Text>
+              <Text style={styles.primaryBtnText}>Continue Reading</Text>
               <Feather name="arrow-right" size={18} color="#1F1C18" />
             </TouchableOpacity>
           )}
@@ -275,7 +299,7 @@ export default function SessionSummaryScreen() {
           >
             <Feather name="home" size={17} color={colors.foreground} />
             <Text style={[styles.secondaryBtnText, { color: colors.foreground }]}>
-              BACK TO THE FLOOR ▸
+              Back to Home
             </Text>
           </TouchableOpacity>
         </View>

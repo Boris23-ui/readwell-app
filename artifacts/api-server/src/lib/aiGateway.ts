@@ -55,6 +55,26 @@ class LRUCache {
 
 export type AIPurpose = 'quiz' | 'simplify' | 'comprehension' | 'coach';
 
+export type AIGatewayErrorReason = 'no_client' | 'budget_exceeded' | 'api_error';
+
+export class AIGatewayError extends Error {
+  readonly reason: AIGatewayErrorReason;
+  readonly status?: number;
+  readonly cause?: unknown;
+
+  constructor(
+    message: string,
+    reason: AIGatewayErrorReason,
+    opts?: { status?: number; cause?: unknown },
+  ) {
+    super(message);
+    this.name = 'AIGatewayError';
+    this.reason = reason;
+    this.status = opts?.status;
+    this.cause = opts?.cause;
+  }
+}
+
 export interface AIRequest {
   purpose: AIPurpose;
   priority: AIPriority;
@@ -94,17 +114,38 @@ const DEFAULT_TTL: Record<AIPurpose, number> = {
   coach: 0,                        // never cache chat responses
 };
 
-const GEMINI_TIMEOUT_MS = 60_000;
+const GEMINI_TIMEOUT_MS = 25_000;
+const MODEL_COOLDOWN_MS = 5 * 60 * 1000;
+
+export function isModelFailoverError(err: unknown): boolean {
+  const errObj = err as { name?: unknown; message?: unknown; status?: unknown; statusCode?: unknown } | null;
+  const errName = String(errObj?.name || '');
+  const errMsg = String(errObj?.message || err || '');
+  const status = Number(errObj?.status ?? errObj?.statusCode);
+
+  if (status === 404 || status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+  if (/AbortError|TimeoutError/i.test(errName)) {
+    return true;
+  }
+  return (
+    /429|quota|RESOURCE_EXHAUSTED|Too Many Requests/i.test(errMsg) ||
+    /500|502|503|504|404|408/i.test(errMsg) ||
+    /Service Unavailable|Gateway Timeout|Not Found|timeout|timed out|aborted/i.test(errMsg)
+  );
+}
 
 class AIGateway {
   private client: GoogleGenAI | null = null;
   private modelName: string;
   private agentModelName: string;
   private cache = new LRUCache(200);
+  private unhealthyModels = new Map<string, number>();
   private initialized = false;
 
   constructor() {
-    this.modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    this.modelName = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
     this.agentModelName = process.env.GEMINI_AGENT_MODEL || 'gemini-3-flash-preview';
     this.init();
   }
@@ -120,7 +161,7 @@ class AIGateway {
         apiKey,
         httpOptions: {
           timeout: GEMINI_TIMEOUT_MS,
-          retryOptions: { attempts: 3 },
+          retryOptions: { attempts: 1 },
         },
       });
       this.initialized = true;
@@ -209,14 +250,27 @@ class AIGateway {
       const primaryModel =
         req.model || (req.purpose === 'coach' ? this.agentModelName : this.modelName);
 
-      const candidateModels = Array.from(
+      const allCandidates = Array.from(
         new Set([
           primaryModel,
           'gemini-3-flash-preview',
-          'gemini-3.7-flash',
-          'gemini-3.5-flash',
+          'gemini-3.6-flash',
+          'gemini-flash-latest',
         ]),
       );
+
+      // Skip models that recently timed out or returned 503/404 so subsequent calls stay fast.
+      const now = Date.now();
+      const healthyCandidates = allCandidates.filter((m) => {
+        const until = this.unhealthyModels.get(m);
+        if (until === undefined) return true;
+        if (now >= until) {
+          this.unhealthyModels.delete(m);
+          return true;
+        }
+        return false;
+      });
+      const candidateModels = healthyCandidates.length > 0 ? healthyCandidates : allCandidates;
 
       const parts: any[] = [{ text: req.prompt }];
       if (req.image) {
@@ -241,6 +295,7 @@ class AIGateway {
           const candidateText = (response.text ?? '').trim();
           if (candidateText) {
             text = candidateText;
+            this.unhealthyModels.delete(currentModel);
             if (currentModel !== primaryModel) {
               logger.info(
                 { primaryModel, fallbackModel: currentModel, purpose: req.purpose },
@@ -252,18 +307,11 @@ class AIGateway {
         } catch (err: any) {
           lastError = err;
           const errMsg = String(err?.message || '');
-          const isQuotaOrUnavailable =
-            errMsg.includes('429') ||
-            errMsg.includes('quota') ||
-            errMsg.includes('RESOURCE_EXHAUSTED') ||
-            errMsg.includes('503') ||
-            errMsg.includes('404') ||
-            errMsg.includes('Too Many Requests') ||
-            errMsg.includes('Service Unavailable');
-          if (isQuotaOrUnavailable) {
+          if (isModelFailoverError(err)) {
+            this.unhealthyModels.set(currentModel, Date.now() + MODEL_COOLDOWN_MS);
             logger.warn(
               { failedModel: currentModel, error: errMsg.slice(0, 120), purpose: req.purpose },
-              'AIGateway: Model rate limited or unavailable, trying next candidate model...',
+              'AIGateway: Model unavailable or timed out, trying next candidate model...',
             );
             continue;
           }
@@ -311,13 +359,14 @@ class AIGateway {
         { err, purpose: req.purpose },
         'AIGateway: Gemini call failed — falling back',
       );
-      return this.runFallback(req, 'api_error');
+      return this.runFallback(req, 'api_error', err);
     }
   }
 
   private runFallback(
     req: AIRequest,
-    reason: string,
+    reason: AIGatewayErrorReason,
+    cause?: unknown,
   ): AIResponse {
     if (req.fallbackFn) {
       const text = req.fallbackFn();
@@ -336,8 +385,28 @@ class AIGateway {
         purpose: req.purpose,
       };
     }
-    throw new Error(
+
+    let status: number | undefined;
+    if (typeof cause === 'object' && cause !== null) {
+      const rec = cause as Record<string, unknown>;
+      for (const k of ['status', 'statusCode', 'code'] as const) {
+        const val = Number(rec[k]);
+        if (Number.isInteger(val) && val >= 400 && val <= 599) {
+          status = val;
+          break;
+        }
+      }
+    }
+    if (!status && cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      const match = msg.match(/\b(401|403|404|408|429|500|502|503|504)\b/);
+      if (match) status = Number(match[1]);
+    }
+
+    throw new AIGatewayError(
       `AIGateway: No fallback defined for purpose '${req.purpose}' (reason: ${reason})`,
+      reason,
+      { status, cause },
     );
   }
 

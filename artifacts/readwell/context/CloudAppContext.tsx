@@ -11,6 +11,7 @@ import {
   Quiz,
 } from '@/types';
 import { deletePdfPages } from '@/utils/api';
+import { calculateReadingMinutes, getLevelFromXp, todayDate } from '@/utils/xp';
 import { runOrphanCleanup, type PendingPdfImport } from './orphanCleanup';
 import { applyOcrMigration, parsePendingImports } from '../utils/ocr';
 import { parseStoredJson, isArray } from '../utils/safeStorage';
@@ -51,22 +52,6 @@ export const DEFAULT_PROFILE: UserProfile = {
   totalBooksFinished: 0,
   createdAt: new Date().toISOString(),
 };
-
-function getLevelFromXp(totalXp: number): number {
-  let level = 1;
-  let xpRequired = 100;
-  let accumulated = 0;
-  while (accumulated + xpRequired <= totalXp) {
-    accumulated += xpRequired;
-    level++;
-    xpRequired = Math.floor(xpRequired * 1.4);
-  }
-  return level;
-}
-
-function todayString(): string {
-  return new Date().toISOString().split('T')[0];
-}
 
 interface AppContextType {
   profile: UserProfile;
@@ -309,8 +294,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
 
-    const today = todayString();
-    const minutesRead = Math.floor(session.secondsRead / 60);
+    const today = todayDate();
+    const minutesRead = calculateReadingMinutes(session.secondsRead);
 
     setDailyActivities(prev => {
       const existing = prev.find(a => a.date === today);
@@ -330,14 +315,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const newTotalXp = profile.xp + session.xpEarned;
 
     const updatedSessions = [session, ...sessions];
-    const recentSessions = updatedSessions.slice(0, 20);
+    // Only count sessions where a quiz was actually scored (> 0 or non-skipped)
+    const scoredSessions = updatedSessions
+      .filter((s) => s.comprehensionScore > 0)
+      .slice(0, 20);
     let newComprehensionScore = profile.comprehensionScore || 0;
     let newComprehensionTrend: 'up' | 'down' | 'flat' = profile.comprehensionTrend || 'flat';
 
-    if (recentSessions.length > 0) {
+    if (scoredSessions.length > 0 && session.comprehensionScore > 0) {
       let totalWeight = 0;
       let weightedSum = 0;
-      recentSessions.forEach((s, index) => {
+      scoredSessions.forEach((s, index) => {
         const weight = Math.pow(0.9, index);
         weightedSum += (s.comprehensionScore || 0) * weight;
         totalWeight += weight;
@@ -350,7 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         else if (calculatedScore < oldScore - 2) newComprehensionTrend = 'down';
         else newComprehensionTrend = 'flat';
       }
-      
+
       newComprehensionScore = calculatedScore;
     }
 
@@ -409,10 +397,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveProfileToDb(currentUserId, updatedProfile).catch(console.error);
 
     return { newBadges };
-  }, [profile, user]);
+  }, [profile, sessions, user]);
 
   const getTodayActivity = useCallback((): DailyActivity | null => {
-    const today = todayString();
+    const today = todayDate();
     return dailyActivities.find(a => a.date === today) ?? null;
   }, [dailyActivities]);
 
